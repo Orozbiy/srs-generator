@@ -1,0 +1,4 @@
+Handwriting fonts: Caveat, Bad Script, Pacifico, Pangolin, Shantell Sans, Playpen Sans.
+All licensed under the SIL Open Font License 1.1 (https://openfontlicense.org), sourced from Google Fonts.
+Variable fonts were pinned to their default instance.
+marckscript_kg.ttf: modified version of Marck Script (Denis Masharov, OFL 1.1) renamed "Marck Script KG"; Kyrgyz letters Ө ө Ү ү Ң ң were added and capital О redrawn.
