@@ -1,0 +1,780 @@
+import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:flutter/material.dart';
+
+import '../models/diagram_spec.dart';
+import '../models/handwriting_style.dart';
+import 'my_handwriting/hw_profile.dart';
+import 'my_handwriting/hw_render.dart';
+import 'pencil.dart';
+
+/// Диаграммаларды PNG сүрөткө айлантат. Ошол эле PNG PDFке да, Wordго да кирет.
+/// Бардык сызыктар кара карандаш менен кол менен сызгандай чийилет
+/// (жеңил толкундоо, басымдын өзгөрүшү, эки жолу сызылган изи, штрих).
+class DiagramService {
+
+  // Карандашта түс жок, ошондуктан сериялар сызыктын түрү менен айырмаланат.
+  static const List<List<double>> _dashes = [
+    [], // үзгүлтүксүз
+    [9, 5],
+    [2, 5],
+    [10, 4, 2, 4],
+  ];
+
+  /// Учурдагы жазуучу (render учурунда гана коюлат).
+  static _Writer _w = _Writer(null, null);
+
+  /// Көрсөтүлгөн спецификация боюнча PNG жасайт. Жасай албаса null.
+  /// [hand] берилсе, графиктеги бардык жазуулар жана сандар ошол кол
+  /// жазма менен жазылат («Менин кол жазмам» болсо — өз тамгаларыңыз менен).
+  static Future<Uint8List?> render(DiagramSpec spec,
+      {double scale = 3, HandwritingStyle? hand}) async {
+    final size = _sizeFor(spec);
+    if (size == null) return null;
+
+    MyHandwriting? mine;
+    if (hand == HandwritingStyle.mine) {
+      try {
+        final prof = await MyHandwritingStore.load();
+        if (prof != null && prof.usable) mine = prof;
+      } catch (_) {}
+    }
+    final writer = _Writer(hand, mine);
+    _w = writer;
+    try {
+      if (mine != null) {
+        // 1-өтүш: кайсы жазуулар керек экенин чогултуп, аларды кол жазма
+        // менен сүрөткө айландырабыз (бул асинхрондуу иш).
+        writer.collecting = true;
+        final rec0 = ui.PictureRecorder();
+        _drawAll(Canvas(rec0), size, spec);
+        rec0.endRecording().dispose();
+        await writer.decodeAll();
+        writer.collecting = false;
+      }
+
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      canvas.scale(scale);
+      _drawAll(canvas, size, spec);
+
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(
+        (size.width * scale).round(),
+        (size.height * scale).round(),
+      );
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      picture.dispose();
+      image.dispose();
+      if (data == null) return null;
+      return data.buffer.asUint8List();
+    } catch (_) {
+      return null;
+    } finally {
+      writer.dispose();
+      _w = _Writer(null, null);
+    }
+  }
+
+  static void _drawAll(Canvas canvas, Size size, DiagramSpec spec) {
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Paint()..color = Colors.white,
+    );
+    final seed = spec.title.hashCode ^ (spec.kind.index * 7919) ^ 0x5A17;
+    final p = _Pc(canvas, seed);
+    switch (spec.kind) {
+      case DiagramKind.chart:
+        _drawChart(p, size, spec);
+        break;
+      case DiagramKind.circuit:
+        _drawCircuit(p, size, spec);
+        break;
+      case DiagramKind.block:
+        _drawBlocks(p, size, spec);
+        break;
+    }
+  }
+
+  static Size? _sizeFor(DiagramSpec spec) {
+    switch (spec.kind) {
+      case DiagramKind.chart:
+        if (spec.series.isEmpty) return null;
+        return const Size(540, 340);
+      case DiagramKind.circuit:
+        if (spec.elements.isEmpty) return null;
+        final rows = spec.circuitLayout.startsWith('par')
+            ? spec.elements.length
+            : 1;
+        final extra = spec.title.isNotEmpty ? 26.0 : 0.0;
+        return Size(540, 150.0 + extra + rows * 55);
+      case DiagramKind.block:
+        final n = spec.nodes.length;
+        if (n == 0) return null;
+        return Size(460, 50.0 + n * 86);
+    }
+  }
+
+  // ------------------------------------------------------------------ текст
+  static _Txt _painter(
+    String text, {
+    double size = 11,
+    double maxWidth = 400,
+    TextAlign align = TextAlign.left,
+  }) =>
+      _w.layout(text, size, maxWidth, align);
+
+  static void _text(
+    Canvas c,
+    String text,
+    Offset at, {
+    double size = 11,
+    bool centerX = false,
+    bool centerY = false,
+    double maxWidth = 400,
+    TextAlign align = TextAlign.left,
+  }) {
+    if (text.isEmpty) return;
+    final tp = _painter(text, size: size, maxWidth: maxWidth, align: align);
+    tp.paint(
+      c,
+      Offset(
+        centerX ? at.dx - tp.width / 2 : at.dx,
+        centerY ? at.dy - tp.height / 2 : at.dy,
+      ),
+    );
+  }
+
+  static void _rotatedText(Canvas c, String text, Offset at,
+      {double size = 11}) {
+    if (text.isEmpty) return;
+    c.save();
+    c.translate(at.dx, at.dy);
+    c.rotate(-math.pi / 2);
+    final tp = _painter(text, size: size, maxWidth: 260);
+    tp.paint(c, Offset(-tp.width / 2, 0));
+    c.restore();
+  }
+
+  /// Аталыш: текст жана анын астына карандаш сызыгы.
+  static void _title(_Pc p, Size size, String title) {
+    if (title.isEmpty) return;
+    final tp = _painter(title,
+        size: 13.5, maxWidth: size.width - 20, align: TextAlign.center);
+    final x = size.width / 2 - tp.width / 2;
+    tp.paint(p.c, Offset(x, 6));
+    final y = 6 + tp.height + 1;
+    p.line(Offset(x + 2, y), Offset(x + tp.width - 2, y + 0.6), w: 0.9);
+  }
+
+  // ----------------------------------------------------------------- график
+  static void _marker(_Pc p, int si, Offset o) {
+    switch (si % 4) {
+      case 0:
+        p.dot(o, 2.4);
+        break;
+      case 1:
+        p.rect(Rect.fromCenter(center: o, width: 5.5, height: 5.5), w: 0.8);
+        break;
+      case 2:
+        p.poly([
+          Offset(o.dx, o.dy - 3.4),
+          Offset(o.dx + 3.2, o.dy + 2.6),
+          Offset(o.dx - 3.2, o.dy + 2.6),
+        ], closed: true, w: 0.8);
+        break;
+      default:
+        p.poly([
+          Offset(o.dx, o.dy - 3.6),
+          Offset(o.dx + 3.4, o.dy),
+          Offset(o.dx, o.dy + 3.6),
+          Offset(o.dx - 3.4, o.dy),
+        ], closed: true, w: 0.8);
+    }
+  }
+
+  static void _hatchBar(_Pc p, int si, Rect r) {
+    final rr = r.deflate(0.8);
+    if (rr.width < 2 || rr.height < 2) return;
+    switch (si % 4) {
+      case 0:
+        p.hatchRect(rr, spacing: 3.2, angle: math.pi / 4);
+        break;
+      case 1:
+        p.hatchRect(rr, spacing: 3.2, angle: -math.pi / 4);
+        break;
+      case 2:
+        p.hatchRect(rr, spacing: 4.2, angle: math.pi / 4);
+        p.hatchRect(rr, spacing: 4.2, angle: -math.pi / 4);
+        break;
+      default:
+        p.hatchRect(rr, spacing: 3.0, angle: 0);
+    }
+  }
+
+  static void _drawChart(_Pc p, Size size, DiagramSpec spec) {
+    final c = p.c;
+    final series = spec.series;
+    const left = 58.0;
+    const right = 16.0;
+    const top = 34.0;
+    const bottom = 52.0;
+
+    final plot = Rect.fromLTRB(
+        left, top, size.width - right, size.height - bottom);
+
+    _title(p, size, spec.title);
+
+    var minX = double.infinity, maxX = -double.infinity;
+    var minY = double.infinity, maxY = -double.infinity;
+    for (final s in series) {
+      for (final pt in s.points) {
+        minX = math.min(minX, pt.x);
+        maxX = math.max(maxX, pt.x);
+        minY = math.min(minY, pt.y);
+        maxY = math.max(maxY, pt.y);
+      }
+    }
+    if (minX == maxX) maxX = minX + 1;
+    if (minY == maxY) maxY = minY + 1;
+    // нөлдү камтуу — окшуу графиктер үчүн табигый
+    if (minY > 0) minY = 0;
+    if (minX > 0) minX = 0;
+    final padY = (maxY - minY) * 0.08;
+    maxY += padY;
+
+    double px(double x) =>
+        plot.left + (x - minX) / (maxX - minX) * plot.width;
+    double py(double y) =>
+        plot.bottom - (y - minY) / (maxY - minY) * plot.height;
+
+    const divs = 5;
+    for (var i = 0; i <= divs; i++) {
+      final y = plot.top + plot.height * i / divs;
+      p.line(Offset(plot.left, y), Offset(plot.right, y), fade: 0.72, w: 0.55);
+      final value = maxY - (maxY - minY) * i / divs;
+      final tp = _painter(_fmt(value),
+          size: 9, maxWidth: 52, align: TextAlign.right);
+      tp.paint(c, Offset(plot.left - 8 - tp.width, y - tp.height / 2));
+    }
+    for (var i = 0; i <= divs; i++) {
+      final x = plot.left + plot.width * i / divs;
+      p.line(Offset(x, plot.top), Offset(x, plot.bottom), fade: 0.72, w: 0.55);
+      final value = minX + (maxX - minX) * i / divs;
+      _text(c, _fmt(value), Offset(x, plot.bottom + 5),
+          size: 9, centerX: true, maxWidth: 70, align: TextAlign.center);
+    }
+
+    // окторду арматура менен (басым күчтүү)
+    p.line(Offset(plot.left, plot.top - 8), Offset(plot.left, plot.bottom),
+        w: 1.35);
+    p.line(Offset(plot.left, plot.bottom), Offset(plot.right + 8, plot.bottom),
+        w: 1.35);
+    _arrow(p, Offset(plot.left, plot.top - 8), -math.pi / 2);
+    _arrow(p, Offset(plot.right + 8, plot.bottom), 0);
+
+    if (spec.xLabel.isNotEmpty) {
+      _text(c, spec.xLabel, Offset(plot.right, plot.bottom + 22),
+          size: 10, centerX: true, maxWidth: 160, align: TextAlign.center);
+    }
+    if (spec.yLabel.isNotEmpty) {
+      _rotatedText(c, spec.yLabel, Offset(14, plot.top + plot.height / 2),
+          size: 10);
+    }
+
+    final isBar = spec.chartType == 'bar';
+    for (var si = 0; si < series.length; si++) {
+      final s = series[si];
+      final pts = [...s.points]..sort((a, b) => a.x.compareTo(b.x));
+
+      if (isBar) {
+        final bw = plot.width / (pts.length * series.length + 1) * 0.8;
+        for (var i = 0; i < pts.length; i++) {
+          final x = px(pts[i].x) + (si - (series.length - 1) / 2) * bw;
+          final r = Rect.fromPoints(
+              Offset(x - bw / 2, py(pts[i].y)),
+              Offset(x + bw / 2, py(math.max(0, minY))));
+          _hatchBar(p, si, r);
+          p.rect(r, w: 1.1);
+        }
+      } else {
+        final line = <Offset>[
+          for (final pt in pts) Offset(px(pt.x), py(pt.y)),
+        ];
+        if (spec.chartType != 'scatter' && line.length >= 2) {
+          final pat = _dashes[si % _dashes.length];
+          if (pat.isEmpty) {
+            p.poly(line, w: 1.45);
+          } else {
+            p.dashed(line, pat, w: 1.35);
+          }
+        }
+        if (pts.length <= 30) {
+          for (final o in line) {
+            _marker(p, si, o);
+          }
+        }
+      }
+    }
+
+    // легенда
+    final named = series.where((s) => s.name.isNotEmpty).toList();
+    if (named.isNotEmpty) {
+      var x = plot.left + 4;
+      final y = size.height - 16;
+      for (var i = 0; i < named.length; i++) {
+        final si = series.indexOf(named[i]);
+        if (isBar) {
+          final r = Rect.fromLTWH(x, y - 1, 15, 9);
+          _hatchBar(p, si, r);
+          p.rect(r, w: 0.9);
+        } else {
+          final pat = _dashes[si % _dashes.length];
+          final a = Offset(x, y + 4);
+          final b = Offset(x + 16, y + 4);
+          if (pat.isEmpty) {
+            p.line(a, b, w: 1.3);
+          } else {
+            p.dashed([a, b], pat, w: 1.2);
+          }
+          _marker(p, si, Offset(x + 8, y + 4));
+        }
+        final tp = _painter(named[i].name, size: 9.5);
+        tp.paint(c, Offset(x + 21, y - 3));
+        x += 21 + tp.width + 16;
+        if (x > size.width - 40) break;
+      }
+    }
+  }
+
+  static String _fmt(double v) {
+    if (v == v.roundToDouble() && v.abs() < 100000) {
+      return v.toInt().toString();
+    }
+    if (v.abs() >= 1000 || (v.abs() < 0.01 && v != 0)) {
+      return v.toStringAsExponential(1);
+    }
+    return v.toStringAsFixed(2);
+  }
+
+  static void _arrow(_Pc p, Offset tip, double angle) {
+    const len = 7.0;
+    const spread = 0.42;
+    for (final s in [-spread, spread]) {
+      final a = angle + math.pi + s;
+      p.line(tip, tip + Offset(math.cos(a) * len, math.sin(a) * len), w: 1.1);
+    }
+  }
+
+  // ---------------------------------------------------------- электр схема
+  static void _drawCircuit(_Pc p, Size size, DiagramSpec spec) {
+    final c = p.c;
+    _title(p, size, spec.title);
+
+    final parallel = spec.circuitLayout.startsWith('par');
+    final elements = spec.elements;
+    final top = spec.title.isNotEmpty ? 72.0 : 46.0;
+    final rect = Rect.fromLTRB(60, top, size.width - 40, size.height - 34);
+
+    // булак (сол тарапта)
+    _battery(p, Offset(rect.left, rect.center.dy));
+    if (spec.sourceLabel.isNotEmpty) {
+      _text(c, spec.sourceLabel, Offset(rect.left - 8, rect.center.dy + 22),
+          size: 10, centerX: true, maxWidth: 110, align: TextAlign.center);
+    }
+
+    if (!parallel) {
+      // сериялык: жогорку сапта бардык элементтер
+      p.line(Offset(rect.left, rect.center.dy - 14),
+          Offset(rect.left, rect.top));
+      p.line(Offset(rect.left, rect.center.dy + 14),
+          Offset(rect.left, rect.bottom));
+      p.line(Offset(rect.left, rect.bottom), Offset(rect.right, rect.bottom));
+      p.line(Offset(rect.right, rect.bottom), Offset(rect.right, rect.top));
+
+      final span = rect.width / elements.length;
+      var x = rect.left;
+      for (var i = 0; i < elements.length; i++) {
+        final centre = x + span / 2;
+        p.line(Offset(x, rect.top), Offset(centre - 21, rect.top));
+        _element(p, elements[i], Offset(centre, rect.top));
+        p.line(Offset(centre + 21, rect.top), Offset(x + span, rect.top));
+        x += span;
+      }
+    } else {
+      // параллель: ар бир элемент өзүнчө бутакта
+      p.line(Offset(rect.left, rect.center.dy - 14),
+          Offset(rect.left, rect.top));
+      p.line(Offset(rect.left, rect.center.dy + 14),
+          Offset(rect.left, rect.bottom));
+      p.line(Offset(rect.left, rect.top), Offset(rect.left + 40, rect.top));
+      p.line(Offset(rect.left, rect.bottom),
+          Offset(rect.left + 40, rect.bottom));
+
+      final branchLeft = rect.left + 40;
+      final branchRight = rect.right - 40;
+      p.line(Offset(branchLeft, rect.top), Offset(branchLeft, rect.bottom));
+      p.line(Offset(branchRight, rect.top), Offset(branchRight, rect.bottom));
+      p.line(Offset(branchRight, rect.top), Offset(rect.right, rect.top));
+      p.line(Offset(rect.right, rect.top), Offset(rect.right, rect.bottom));
+      p.line(Offset(rect.right, rect.bottom), Offset(branchRight, rect.bottom));
+
+      final step = rect.height / elements.length;
+      for (var i = 0; i < elements.length; i++) {
+        final y = rect.top + step * (i + 0.5);
+        final centre = (branchLeft + branchRight) / 2;
+        p.line(Offset(branchLeft, y), Offset(centre - 21, y));
+        _element(p, elements[i], Offset(centre, y));
+        p.line(Offset(centre + 21, y), Offset(branchRight, y));
+      }
+    }
+  }
+
+  static void _battery(_Pc p, Offset at) {
+    // узун сызык = плюс, кыска = минус
+    p.line(at + const Offset(-11, -14), at + const Offset(11, -14), w: 1.25);
+    p.line(at + const Offset(-6, -6), at + const Offset(6, -6), w: 1.25);
+    p.line(at + const Offset(-11, 2), at + const Offset(11, 2), w: 1.25);
+    p.line(at + const Offset(-6, 10), at + const Offset(6, 10), w: 1.25);
+    p.line(at + const Offset(0, -20), at + const Offset(0, -14));
+    p.line(at + const Offset(0, 10), at + const Offset(0, 16));
+  }
+
+  static void _element(_Pc p, CircuitElement el, Offset centre) {
+    final kind = el.kind.isEmpty ? 'R' : el.kind[0].toUpperCase();
+    switch (kind) {
+      case 'C': // конденсатор
+        p.line(centre + const Offset(-21, 0), centre + const Offset(-4, 0));
+        p.line(centre + const Offset(-4, -11), centre + const Offset(-4, 11),
+            w: 1.25);
+        p.line(centre + const Offset(4, -11), centre + const Offset(4, 11),
+            w: 1.25);
+        p.line(centre + const Offset(4, 0), centre + const Offset(21, 0));
+        break;
+      case 'L': // катушка
+        p.line(centre + const Offset(-21, 0), centre + const Offset(-15, 0));
+        for (var i = 0; i < 4; i++) {
+          p.arc(
+            Rect.fromCircle(
+                center: centre + Offset(-11 + i * 7.5, 0), radius: 3.9),
+            math.pi,
+            math.pi,
+          );
+        }
+        p.line(centre + const Offset(18, 0), centre + const Offset(21, 0));
+        break;
+      case 'D': // диод
+        final tri = [
+          Offset(centre.dx - 8, centre.dy - 8),
+          Offset(centre.dx + 6, centre.dy),
+          Offset(centre.dx - 8, centre.dy + 8),
+        ];
+        p.hatchPoly(tri, spacing: 2.2, angle: math.pi / 4, fade: 0.05);
+        p.poly(tri, closed: true);
+        p.line(centre + const Offset(6, -9), centre + const Offset(6, 9),
+            w: 1.25);
+        p.line(centre + const Offset(-21, 0), centre + const Offset(-8, 0));
+        p.line(centre + const Offset(6, 0), centre + const Offset(21, 0));
+        break;
+      case 'S': // ачкыч
+        p.line(centre + const Offset(-21, 0), centre + const Offset(-9, 0));
+        p.line(centre + const Offset(-9, 0), centre + const Offset(7, -10));
+        p.line(centre + const Offset(9, 0), centre + const Offset(21, 0));
+        p.dot(centre + const Offset(-9, 0), 2);
+        p.dot(centre + const Offset(9, 0), 2);
+        break;
+      case 'M': // мотор / жүктөм
+        p.circle(centre, 12);
+        _text(p.c, 'M', centre,
+            size: 11,
+            centerX: true,
+            centerY: true,
+            maxWidth: 24,
+            align: TextAlign.center);
+        p.line(centre + const Offset(-21, 0), centre + const Offset(-12, 0));
+        p.line(centre + const Offset(12, 0), centre + const Offset(21, 0));
+        break;
+      default: // резистор
+        p.line(centre + const Offset(-21, 0), centre + const Offset(-15, 0));
+        p.rect(Rect.fromCenter(center: centre, width: 30, height: 13));
+        p.line(centre + const Offset(15, 0), centre + const Offset(21, 0));
+    }
+
+    if (el.label.isNotEmpty) {
+      _text(p.c, el.label, centre + const Offset(0, -27),
+          size: 10, centerX: true, maxWidth: 110, align: TextAlign.center);
+    }
+  }
+
+  // ------------------------------------------------------------ блок-схема
+  static void _drawBlocks(_Pc p, Size size, DiagramSpec spec) {
+    final nodes = spec.nodes;
+    final shapes = spec.nodeShapes;
+
+    _title(p, size, spec.title);
+
+    const boxW = 240.0;
+    const boxH = 52.0;
+    final startY = spec.title.isNotEmpty ? 38.0 : 18.0;
+
+    for (var i = 0; i < nodes.length; i++) {
+      final cy = startY + i * 86 + boxH / 2;
+      final rect = Rect.fromCenter(
+          center: Offset(size.width / 2, cy), width: boxW, height: boxH);
+      final shape = i < shapes.length ? shapes[i] : '';
+      final isTerminal = shape.startsWith('start') ||
+          shape.startsWith('end') ||
+          shape.startsWith('term') ||
+          i == 0 ||
+          i == nodes.length - 1;
+      final isDecision = shape.startsWith('dec') || shape.startsWith('if');
+
+      if (isDecision) {
+        p.poly([
+          Offset(rect.center.dx, rect.top - 6),
+          Offset(rect.right, rect.center.dy),
+          Offset(rect.center.dx, rect.bottom + 6),
+          Offset(rect.left, rect.center.dy),
+        ], closed: true, w: 1.2);
+      } else if (isTerminal) {
+        p.rrect(rect, boxH / 2, w: 1.2);
+      } else {
+        p.rect(rect, w: 1.2);
+      }
+
+      _text(p.c, nodes[i], rect.center,
+          size: 10.5,
+          centerX: true,
+          centerY: true,
+          maxWidth: boxW - 26,
+          align: TextAlign.center);
+
+      if (i < nodes.length - 1) {
+        final from = Offset(size.width / 2, rect.bottom + (isDecision ? 6 : 0));
+        final to = Offset(size.width / 2, rect.bottom + 34);
+        p.line(from, to, w: 1.2);
+        _arrow(p, to, math.pi / 2);
+      }
+    }
+  }
+}
+
+/// Canvas'ка карандаш менен чийүүчү кичине жардамчы.
+class _Pc {
+  final Canvas c;
+  final Pencil pen;
+
+  _Pc(this.c, int seed)
+      : pen = Pencil(seed, amp: 0.55, width: 1.1, step: 1.6, chunk: 4);
+
+  void _draw(List<PencilStroke> strokes) {
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    for (final s in strokes) {
+      final q = s.pts;
+      if (q.length < 4) continue;
+      final path = Path()..moveTo(q[0], q[1]);
+      for (var i = 2; i + 1 < q.length; i += 2) {
+        path.lineTo(q[i], q[i + 1]);
+      }
+      paint
+        ..strokeWidth = s.width
+        ..color = Color.fromARGB(255, s.gray, s.gray, s.gray);
+      c.drawPath(path, paint);
+    }
+  }
+
+  void line(Offset a, Offset b, {double fade = 0, double w = 1}) =>
+      _draw(pen.line(a.dx, a.dy, b.dx, b.dy, fade: fade, wScale: w));
+
+  void rect(Rect r, {double w = 1}) =>
+      _draw(pen.rect(r.left, r.top, r.right, r.bottom, wScale: w));
+
+  void rrect(Rect r, double rad, {double w = 1}) =>
+      _draw(pen.rrect(r.left, r.top, r.right, r.bottom, rad, wScale: w));
+
+  void circle(Offset ctr, double rad, {double w = 1}) =>
+      _draw(pen.ellipse(ctr.dx, ctr.dy, rad, rad, wScale: w));
+
+  void arc(Rect r, double start, double sweep, {double w = 1}) => _draw(
+      pen.ellipse(r.center.dx, r.center.dy, r.width / 2, r.height / 2,
+          start: start, sweep: sweep, wScale: w));
+
+  List<double> _flat(List<Offset> pts) =>
+      [for (final o in pts) ...[o.dx, o.dy]];
+
+  void poly(List<Offset> pts, {bool closed = false, double w = 1}) {
+    final f = _flat(pts);
+    _draw(closed ? pen.closed(f, wScale: w) : pen.polyline(f, wScale: w));
+  }
+
+  void dashed(List<Offset> pts, List<double> pattern, {double w = 1}) =>
+      _draw(pen.dashed(_flat(pts), pattern, wScale: w));
+
+  void hatchRect(Rect r,
+          {double spacing = 3.5, double angle = math.pi / 4, double fade = 0.35}) =>
+      _draw(pen.hatchRect(r.left, r.top, r.right, r.bottom,
+          spacing: spacing, angle: angle, fade: fade));
+
+  void hatchPoly(List<Offset> pts,
+          {double spacing = 3.5, double angle = math.pi / 4, double fade = 0.35}) =>
+      _draw(pen.hatchPoly(_flat(pts),
+          spacing: spacing, angle: angle, fade: fade));
+
+  /// Карандаш менен кичине толтурулган чекит.
+  void dot(Offset o, double r) {
+    c.drawCircle(o, r * 0.85, Paint()..color = const Color(0xFF3A3A3A));
+    _draw(pen.ellipse(o.dx, o.dy, r, r, wScale: 0.8));
+  }
+}
+
+/// Бир жазуунун даяр макети: өлчөмү жана чийүү.
+abstract class _Txt {
+  double get width;
+  double get height;
+  void paint(Canvas c, Offset at);
+}
+
+class _FontTxt implements _Txt {
+  final TextPainter tp;
+  _FontTxt(this.tp);
+  @override
+  double get width => tp.width;
+  @override
+  double get height => tp.height;
+  @override
+  void paint(Canvas c, Offset at) => tp.paint(c, at);
+}
+
+class _Line {
+  final ui.Image? image;
+  final double w;
+  final double h;
+  _Line(this.image, this.w, this.h);
+}
+
+/// Колдонуучунун өз кол жазмасы менен жазылган жазуу (саптар сүрөт түрүндө).
+class _HandTxt implements _Txt {
+  final List<_Line> lines;
+  final TextAlign align;
+  _HandTxt(this.lines, this.align);
+  @override
+  double get width => lines.fold(0.0, (m, l) => math.max(m, l.w));
+  @override
+  double get height => lines.fold(0.0, (s, l) => s + l.h);
+  @override
+  void paint(Canvas c, Offset at) {
+    final full = width;
+    var y = at.dy;
+    final paint = Paint()..filterQuality = FilterQuality.high;
+    for (final l in lines) {
+      final img = l.image;
+      if (img != null) {
+        final dx = align == TextAlign.center
+            ? (full - l.w) / 2
+            : align == TextAlign.right
+                ? full - l.w
+                : 0.0;
+        c.drawImageRect(
+          img,
+          Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+          Rect.fromLTWH(at.dx + dx, y, l.w, l.h),
+          paint,
+        );
+      }
+      y += l.h;
+    }
+  }
+}
+
+/// Диаграммадагы жазууларды кайсы кол жазма менен жазууну чечет.
+///  - кол жазма жок: карандаш менен жазгандай шрифт (графит түс);
+///  - даяр кол жазма шрифти: ошол шрифт, ручканын көк сыясы;
+///  - «Менин кол жазмам»: колдонуучунун өз тамгалары (сүрөттөр).
+class _Writer {
+  final HandwritingStyle? style;
+  final MyHandwriting? mine;
+  bool collecting = false;
+
+  /// Кол жазма сүрөттөрү: ачкыч -> саптар.
+  final Map<String, List<HwLineImage>> _pending = {};
+  final Map<String, List<_Line>> _ready = {};
+
+  _Writer(this.style, this.mine);
+
+  static const Color _penInk = Color(0xFF1F2F7A);
+  static const Color _lead = Color(0xFF2B2B2B);
+
+  _Txt _font(String text, double size, double maxWidth, TextAlign align) {
+    final st = style;
+    final font = (st != null && st.asset.isNotEmpty) ? st : null;
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: st == null ? _lead : _penInk,
+          fontFamily: font != null ? font.family : 'hw_pangolin',
+          fontSize: size * (font != null ? font.scale * 1.12 : 1.08),
+          fontWeight: FontWeight.w400,
+          height: 1.2,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      textAlign: align,
+      maxLines: 3,
+      ellipsis: '…',
+    )..layout(maxWidth: maxWidth);
+    return _FontTxt(tp);
+  }
+
+  _Txt layout(String text, double size, double maxWidth, TextAlign align) {
+    final hw = mine;
+    if (hw == null || text.trim().isEmpty || !HwRender.canWrite(hw, text)) {
+      return _font(text, size, maxWidth, align);
+    }
+    final key = '${size.toStringAsFixed(2)}|${maxWidth.round()}|$text';
+    if (collecting) {
+      final lines = _pending[key] ??= HwRender.renderParagraph(
+        hw,
+        text,
+        sizePt: size * 1.2,
+        availPt: maxWidth,
+        lineHeight: 1.3,
+        seed: text.hashCode,
+      );
+      return _HandTxt(
+          [for (final l in lines) _Line(null, l.widthPt, l.heightPt)], align);
+    }
+    final ready = _ready[key];
+    if (ready == null) return _font(text, size, maxWidth, align);
+    return _HandTxt(ready, align);
+  }
+
+  /// Чогултулган кол жазма саптарын ui.Image'ге айландырат.
+  Future<void> decodeAll() async {
+    for (final e in _pending.entries) {
+      final out = <_Line>[];
+      for (final l in e.value) {
+        final codec = await ui.instantiateImageCodec(l.png);
+        final frame = await codec.getNextFrame();
+        codec.dispose();
+        out.add(_Line(frame.image, l.widthPt, l.heightPt));
+      }
+      _ready[e.key] = out;
+    }
+    _pending.clear();
+  }
+
+  void dispose() {
+    for (final ls in _ready.values) {
+      for (final l in ls) {
+        l.image?.dispose();
+      }
+    }
+    _ready.clear();
+  }
+}

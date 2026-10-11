@@ -70,7 +70,8 @@ class LibraryService {
       final spec = blocks[i].diagram;
       if (spec == null) continue;
       final png =
-          await DiagramService.render(spec, hand: config.handwriting);
+          await DiagramService.render(spec,
+          hand: config.handwriting, handProfile: config.handProfile);
       if (png != null) images[i] = png;
     }
 

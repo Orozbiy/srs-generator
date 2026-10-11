@@ -334,6 +334,10 @@ class SrsConfig {
   /// null — кадимки жазуу, башкасы — тандалган кол жазма.
   final HandwritingStyle? handwriting;
 
+  /// «Менин кол жазмам» тандалганда — кимдин кол жазмасы (профилдин id'си).
+  /// null — негизги кол жазма.
+  final String? handProfile;
+
   /// Сүрөт/схема кошулсунбу?
   final bool withDiagrams;
 
@@ -345,6 +349,7 @@ class SrsConfig {
     this.documentText,
     this.withDiagrams = true,
     this.handwriting,
+    this.handProfile,
   });
 
   String get subjectName => subject.nameIn(language);
@@ -356,6 +361,7 @@ class SrsConfig {
         'topic': topic,
         'withDiagrams': withDiagrams,
         'handwriting': handwriting?.id,
+        if (handProfile != null) 'handProfile': handProfile,
       };
 
   factory SrsConfig.fromJson(Map<String, dynamic> j) => SrsConfig(
@@ -374,5 +380,6 @@ class SrsConfig {
         topic: (j['topic'] ?? '') as String,
         withDiagrams: (j['withDiagrams'] ?? true) as bool,
         handwriting: HandwritingStyle.fromId(j['handwriting'] as String?),
+        handProfile: j['handProfile'] as String?,
       );
 }

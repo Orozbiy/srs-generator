@@ -35,6 +35,10 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _readingDoc = false;
   HandwritingStyle? _hand; // null — кадимки жазуу
 
+  /// «Менин кол жазмам» тандалса — кимдики (профилдин id'си жана аты).
+  String? _handProfile;
+  String? _handProfileName;
+
   List<DocItem>? _docItems; // документтин бөлүктөрү (белгилери менен)
   String? _docName;
 
@@ -131,11 +135,22 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _chooseHandwriting() async {
-    final picked = await Navigator.push<HandwritingStyle>(
+    final picked = await Navigator.push<HandChoice>(
       context,
-      MaterialPageRoute(builder: (_) => HandwritingScreen(selected: _hand)),
+      MaterialPageRoute(
+        builder: (_) => HandwritingScreen(
+          selected: _hand,
+          selectedProfile: _handProfile,
+        ),
+      ),
     );
-    if (picked != null && mounted) setState(() => _hand = picked);
+    if (picked != null && mounted) {
+      setState(() {
+        _hand = picked.style;
+        _handProfile = picked.profileId;
+        _handProfileName = picked.profileName;
+      });
+    }
   }
 
   Widget _modeCard({
@@ -210,6 +225,7 @@ class _HomeScreenState extends State<HomeScreen> {
       documentText: _docText,
       withDiagrams: _withDiagrams,
       handwriting: _hand,
+      handProfile: _hand == HandwritingStyle.mine ? _handProfile : null,
     );
 
     setState(() => _busy = true);
@@ -371,7 +387,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           title: '1 — Кадимки',
                           subtitle: 'Азыркыдай басма текст',
                           selected: _hand == null,
-                          onTap: () => setState(() => _hand = null),
+                          onTap: () => setState(() {
+                            _hand = null;
+                            _handProfile = null;
+                            _handProfileName = null;
+                          }),
                         ),
                       ),
                       SizedBox(
@@ -381,7 +401,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           title: '2 — Кол жазма',
                           subtitle: _hand == null
                               ? '5 даяр кол жазмадан тандоо'
-                              : 'Тандалды: ${_hand!.label} (өзгөртүү)',
+                              : 'Тандалды: ${_hand == HandwritingStyle.mine ? (_handProfileName ?? _hand!.label) : _hand!.label} (өзгөртүү)',
                           selected: _hand != null,
                           onTap: _chooseHandwriting,
                         ),

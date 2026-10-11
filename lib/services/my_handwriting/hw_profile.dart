@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -270,17 +271,124 @@ class MyHandwriting {
   }
 }
 
+/// Бир адамдын кол жазмасы (профиль): аты жана өзүнчө папкасы.
+class HwProfileInfo {
+  final String id;
+  final String name;
+  const HwProfileInfo(this.id, this.name);
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name};
+}
+
 /// Үйрөтүлгөн кол жазманы дискте сактоо (ар бир шаблон барагы өзүнчө файл).
+///
+/// Бир нече адамдын кол жазмасы сакталат. Биринчиси ([defaultId]) мурдагы
+/// `my_handwriting` папкасынын өзүндө турат (эски тамгалар жоголбойт),
+/// калгандары `my_handwriting/p_<id>` папкаларында.
 class MyHandwritingStore {
-  static Future<Directory> _dir() async {
+  static const String defaultId = 'default';
+  static const String defaultName = 'Менин кол жазмам';
+
+  /// Учурда үйрөтүлүп жаткан профиль (MyHandwritingScreen коёт).
+  static String current = defaultId;
+
+  static Future<Directory> _root() async {
     final base = await getApplicationSupportDirectory();
     final d = Directory('${base.path}${Platform.pathSeparator}my_handwriting');
     if (!await d.exists()) await d.create(recursive: true);
     return d;
   }
 
-  static Future<File> _file(int page) async {
-    final d = await _dir();
+  static Future<Directory> _dir([String? profile]) async {
+    final root = await _root();
+    final id = profile ?? current;
+    if (id == defaultId) return root;
+    final d = Directory('${root.path}${Platform.pathSeparator}p_$id');
+    if (!await d.exists()) await d.create(recursive: true);
+    return d;
+  }
+
+  // ---------------------------------------------------- профилдер тизмеси
+  static Future<File> _listFile() async {
+    final root = await _root();
+    return File('${root.path}${Platform.pathSeparator}profiles.json');
+  }
+
+  /// Бардык кол жазмалар (биринчиси — негизгиси, ар дайым бар).
+  static Future<List<HwProfileInfo>> profiles() async {
+    final out = <HwProfileInfo>[];
+    try {
+      final f = await _listFile();
+      if (await f.exists()) {
+        final data = jsonDecode(await f.readAsString());
+        if (data is List) {
+          for (final e in data) {
+            if (e is Map && e['id'] != null) {
+              out.add(HwProfileInfo(
+                  e['id'].toString(), (e['name'] ?? '').toString()));
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    if (!out.any((p) => p.id == defaultId)) {
+      out.insert(0, const HwProfileInfo(defaultId, defaultName));
+    }
+    return out;
+  }
+
+  static Future<void> _saveList(List<HwProfileInfo> list) async {
+    final f = await _listFile();
+    await f.writeAsString(jsonEncode([for (final p in list) p.toJson()]));
+  }
+
+  static Future<String> nameOf(String? id) async {
+    final want = id ?? defaultId;
+    for (final p in await profiles()) {
+      if (p.id == want) return p.name;
+    }
+    return defaultName;
+  }
+
+  /// Жаңы кол жазма (бош) кошот жана аны кайтарат.
+  static Future<HwProfileInfo> addProfile(String name) async {
+    final list = await profiles();
+    final id = DateTime.now().millisecondsSinceEpoch.toString();
+    final p = HwProfileInfo(id, name.trim().isEmpty ? 'Кол жазма' : name.trim());
+    list.add(p);
+    await _saveList(list);
+    await _dir(id);
+    return p;
+  }
+
+  static Future<void> renameProfile(String id, String name) async {
+    final list = await profiles();
+    final i = list.indexWhere((p) => p.id == id);
+    if (i < 0 || name.trim().isEmpty) return;
+    list[i] = HwProfileInfo(id, name.trim());
+    await _saveList(list);
+  }
+
+  /// Кол жазманы толугу менен өчүрөт. Негизгиси өчпөйт, тазаланат гана.
+  static Future<void> deleteProfile(String id) async {
+    if (id == defaultId) {
+      final keep = current;
+      current = defaultId;
+      await deleteAll();
+      current = keep;
+      return;
+    }
+    final root = await _root();
+    final d = Directory('${root.path}${Platform.pathSeparator}p_$id');
+    if (await d.exists()) await d.delete(recursive: true);
+    final list = await profiles()
+      ..removeWhere((p) => p.id == id);
+    await _saveList(list);
+    if (current == id) current = defaultId;
+  }
+
+  static Future<File> _file(int page, [String? profile]) async {
+    final d = await _dir(profile);
     return File('${d.path}${Platform.pathSeparator}page$page.bin');
   }
 
@@ -304,8 +412,8 @@ class MyHandwritingStore {
   }
 
   // ---- шаблонсуз (дептерге жазылган) топтомдор
-  static Future<File> _freeFile(String id) async {
-    final d = await _dir();
+  static Future<File> _freeFile(String id, [String? profile]) async {
+    final d = await _dir(profile);
     // v2 — тамгаларды бөлүү алгоритми жаңыртылганда эски файлдар эсептелбейт.
     final old = File('${d.path}${Platform.pathSeparator}free_$id.bin');
     if (await old.exists()) await old.delete();
@@ -347,17 +455,18 @@ class MyHandwritingStore {
   }
 
   /// Бардык барактарды окуйт. Эч нерсе жок болсо null.
-  static Future<MyHandwriting?> load() async {
+  /// [profile] берилбесе — учурдагы ([current]) кол жазма.
+  static Future<MyHandwriting?> load({String? profile}) async {
     final map = <int, HwGlyph>{};
     for (var p = 0; p < HwGeom.pageCount; p++) {
-      final f = await _file(p);
+      final f = await _file(p, profile);
       if (!await f.exists()) continue;
       for (final g in MyHandwriting.decode(await f.readAsBytes())) {
         map[g.code] = g;
       }
     }
     for (final st in HwGeom.freeSets) {
-      final f = await _freeFile(st.id);
+      final f = await _freeFile(st.id, profile);
       if (!await f.exists()) continue;
       for (final g in MyHandwriting.decode(await f.readAsBytes())) {
         map[g.code] = g;

@@ -30,14 +30,15 @@ class DiagramService {
   /// [hand] берилсе, графиктеги бардык жазуулар жана сандар ошол кол
   /// жазма менен жазылат («Менин кол жазмам» болсо — өз тамгаларыңыз менен).
   static Future<Uint8List?> render(DiagramSpec spec,
-      {double scale = 3, HandwritingStyle? hand}) async {
+      {double scale = 3, HandwritingStyle? hand, String? handProfile}) async {
     final size = _sizeFor(spec);
     if (size == null) return null;
 
     MyHandwriting? mine;
     if (hand == HandwritingStyle.mine) {
       try {
-        final prof = await MyHandwritingStore.load();
+        final prof = await MyHandwritingStore.load(
+            profile: handProfile ?? MyHandwritingStore.defaultId);
         if (prof != null && prof.usable) mine = prof;
       } catch (_) {}
     }

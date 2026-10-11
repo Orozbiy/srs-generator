@@ -56,7 +56,9 @@ class PdfService {
     _Hand? hw;
     if (hwStyle == HandwritingStyle.mine) {
       // Колдонуучунун өз кол жазмасы (сүрөттөн үйрөтүлгөн тамгалар).
-      final mine = await MyHandwritingStore.load();
+      final mine =
+          await MyHandwritingStore.load(
+          profile: config.handProfile ?? MyHandwritingStore.defaultId);
       if (mine != null && mine.usable) {
         hw = _Hand(regular, 1.0, regular, mine);
       }

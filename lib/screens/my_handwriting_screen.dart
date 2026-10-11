@@ -14,7 +14,15 @@ import '../theme/app_theme.dart';
 
 /// Колдонуучунун өз кол жазмасын үйрөтүү: шаблон -> жазуу -> сүрөт жүктөө.
 class MyHandwritingScreen extends StatefulWidget {
-  const MyHandwritingScreen({super.key});
+  /// Кимдин кол жазмасы үйрөтүлүп жатат (профилдин id'си жана аты).
+  final String profileId;
+  final String profileName;
+
+  const MyHandwritingScreen({
+    super.key,
+    this.profileId = MyHandwritingStore.defaultId,
+    this.profileName = MyHandwritingStore.defaultName,
+  });
 
   @override
   State<MyHandwritingScreen> createState() => _MyHandwritingScreenState();
@@ -36,6 +44,8 @@ class _MyHandwritingScreenState extends State<MyHandwritingScreen> {
   @override
   void initState() {
     super.initState();
+    // Бул экрандагы бардык сактоо/окуу ушул адамдын папкасына барат.
+    MyHandwritingStore.current = widget.profileId;
     _reload();
   }
 
@@ -200,7 +210,7 @@ class _MyHandwritingScreenState extends State<MyHandwritingScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Менин кол жазмам'),
+          title: Text(widget.profileName),
           actions: [
             if (_profile != null)
               TextButton.icon(
