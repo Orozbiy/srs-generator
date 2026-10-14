@@ -12,6 +12,9 @@ class SrsRecord {
   final int charCount;
   final int diagramCount;
 
+  /// Жасалган PDFтин чыныгы барак саны (эски жазууларда 0).
+  final int pages;
+
   const SrsRecord({
     required this.id,
     required this.config,
@@ -22,6 +25,7 @@ class SrsRecord {
     required this.contentPath,
     required this.charCount,
     required this.diagramCount,
+    this.pages = 0,
   });
 
   String get topic => config.topic;
@@ -36,6 +40,7 @@ class SrsRecord {
         'contentPath': contentPath,
         'charCount': charCount,
         'diagramCount': diagramCount,
+        'pages': pages,
       };
 
   factory SrsRecord.fromJson(Map<String, dynamic> j) => SrsRecord(
@@ -50,5 +55,6 @@ class SrsRecord {
         contentPath: (j['contentPath'] ?? '') as String,
         charCount: (j['charCount'] ?? 0) as int,
         diagramCount: (j['diagramCount'] ?? 0) as int,
+        pages: (j['pages'] ?? 0) as int,
       );
 }

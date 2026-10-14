@@ -11,6 +11,7 @@ import '../models/srs_record.dart';
 import 'diagram_service.dart';
 import 'docx_service.dart';
 import 'markdown_parser.dart';
+import 'page_fitter.dart';
 import 'pdf_service.dart';
 
 /// Жасалган СРСтерди Документтер\СРС папкасына сактайт жана тизмесин жүргүзөт.
@@ -55,14 +56,15 @@ class LibraryService {
     );
   }
 
-  static Future<({Uint8List pdf, Uint8List docx, Map<int, Uint8List> images})>
-      _render(SrsConfig config, AuthorInfo author, String content,
-          void Function(String status)? onProgress) async {
-    final blocks = MarkdownParser.parse(content);
+  /// Бир жолку чийүү: блокторго бөлүп, сүрөттөрдү, PDF жана Word жасайт.
+  static Future<_Rendered> _renderOnce(SrsConfig config, AuthorInfo author,
+      String content, void Function(String status)? onProgress) async {
+    final blocks = MarkdownParser.parse(content, lang: config.language);
     // Кол жазма режиминде PDF үчүн формулалар белгиленет (өзгөрүүсүз калышы үчүн)
     final pdfBlocks = config.handwriting == null
         ? blocks
-        : MarkdownParser.parse(content, markFormulas: true);
+        : MarkdownParser.parse(content,
+            markFormulas: true, lang: config.language);
 
     onProgress?.call('Схема жана графиктер чийилип жатат...');
     final images = <int, Uint8List>{};
@@ -90,7 +92,32 @@ class LibraryService {
       author: author,
       images: images,
     );
-    return (pdf: pdfBytes, docx: docxBytes, images: images);
+    return _Rendered(
+      pdf: pdfBytes,
+      docx: docxBytes,
+      images: images,
+      content: content,
+      pages: PageFitter.countPdfPages(pdfBytes),
+    );
+  }
+
+  /// PDFти жасап, анын ЧЫНЫГЫ барак санын өлчөйт. Суралгандан ашып кетсе,
+  /// текстти кыскартып, бир жолу кайра жасайт — ошондо «5 барак» дегенде
+  /// 15 барак чыкпайт.
+  static Future<_Rendered> _render(SrsConfig config, AuthorInfo author,
+      String content, void Function(String status)? onProgress) async {
+    var out = await _renderOnce(config, author, content, onProgress);
+    final target = config.pageCount.value;
+    if (out.pages > target) {
+      final shorter =
+          PageFitter.fit(content, config, shrinkBy: out.pages - target);
+      if (shorter.trim().length < content.trim().length) {
+        onProgress?.call(
+            'Барак саны ылайыкташтырылууда (${out.pages} → $target)...');
+        out = await _renderOnce(config, author, shorter, onProgress);
+      }
+    }
+    return out;
   }
 
   /// Бар СРСтин текстин өзгөртүп, ошол эле папкадагы PDF + Word + content.md
@@ -110,7 +137,7 @@ class LibraryService {
       throw Exception(
           'Файлды жаңыртуу мүмкүн болгон жок. PDF же Word ачык болсо, аны жаап кайра сактаңыз.');
     }
-    await File(record.contentPath).writeAsString(content);
+    await File(record.contentPath).writeAsString(out.content);
 
     final updated = SrsRecord(
       id: record.id,
@@ -120,8 +147,9 @@ class LibraryService {
       pdfPath: record.pdfPath,
       docxPath: record.docxPath,
       contentPath: record.contentPath,
-      charCount: content.length,
+      charCount: out.content.length,
       diagramCount: out.images.length,
+      pages: out.pages,
     );
     final records = await load();
     final i = records.indexWhere((r) => r.id == record.id);
@@ -167,7 +195,7 @@ class LibraryService {
 
     await pdf.writeAsBytes(pdfBytes);
     await docx.writeAsBytes(docxBytes);
-    await md.writeAsString(content);
+    await md.writeAsString(out.content);
 
     final record = SrsRecord(
       id: now.microsecondsSinceEpoch.toString(),
@@ -177,8 +205,9 @@ class LibraryService {
       pdfPath: pdf.path,
       docxPath: docx.path,
       contentPath: md.path,
-      charCount: content.length,
+      charCount: out.content.length,
       diagramCount: images.length,
+      pages: out.pages,
     );
 
     final records = await load();
@@ -219,6 +248,27 @@ class LibraryService {
     if (name.isEmpty) name = 'SRS';
     return name;
   }
+}
+
+/// Бир жолку чийүүнүн натыйжасы.
+class _Rendered {
+  final Uint8List pdf;
+  final Uint8List docx;
+  final Map<int, Uint8List> images;
+
+  /// Чындап сакталган текст (кыскартылган болушу мүмкүн).
+  final String content;
+
+  /// PDFтин чыныгы барак саны (окулбай калса 0).
+  final int pages;
+
+  const _Rendered({
+    required this.pdf,
+    required this.docx,
+    required this.images,
+    required this.content,
+    required this.pages,
+  });
 }
 
 /// Блокторду тышкы жерден да эсептей алуу үчүн.

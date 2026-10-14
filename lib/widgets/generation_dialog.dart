@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../models/srs_config.dart';
 import '../services/ai_service.dart';
+import '../services/grammar.dart';
+import '../services/markdown_parser.dart';
+import '../services/page_fitter.dart';
+import '../services/text_sanitizer.dart';
 import '../theme/app_theme.dart';
 
 /// Генерациянын жүрүшүн көрсөткөн диалог. Натыйжада markdown текст кайтарат.
@@ -25,8 +29,9 @@ class _GenerationDialogState extends State<GenerationDialog> {
   List<String> _sections = [];
   int _current = 0;
 
-  /// Кыргыз грамматика плагини иштейби (кыргызча СРС үчүн гана).
-  bool get _checkGrammar => widget.config.language == Language.kyrgyz;
+  /// Грамматика плагини: кыргызча, орусча жана англисче үчүн иштейт.
+  LanguageGrammar get _grammar => LanguageGrammar.of(widget.config.language);
+  bool get _checkGrammar => true;
   int _grammarFixes = 0;
   int _grammarRounds = 0;
 
@@ -55,7 +60,8 @@ class _GenerationDialogState extends State<GenerationDialog> {
       if (!mounted || _cancelled) return;
       if (_checkGrammar && _sections.isNotEmpty) {
         _set(() => _status = 'Бөлүмдөрдүн аталыштары текшерилүүдө...');
-        _sections = await widget.ai.proofreadTitles(_sections);
+        _sections = await widget.ai
+            .proofreadTitles(_sections, widget.config.language);
         if (!mounted || _cancelled) return;
       }
 
@@ -68,10 +74,11 @@ class _GenerationDialogState extends State<GenerationDialog> {
         if (!mounted || _cancelled) return;
         if (_checkGrammar) {
           _set(() {
-            _status = 'Кыргыз грамматикасы текшерилүүдө...';
+            _status = _grammar.statusChecking;
             _progress = 0.7;
           });
-          final rep = await widget.ai.proofreadKyrgyz(text);
+          final rep =
+              await widget.ai.proofread(text, widget.config.language);
           if (!mounted || _cancelled) return;
           text = rep.text;
           _grammarFixes += rep.autoFixes;
@@ -89,18 +96,24 @@ class _GenerationDialogState extends State<GenerationDialog> {
             _progress = 0.06 + (i / total) * 0.80;
           });
 
-          var text = await widget.ai
-              .generateSection(widget.config, section, i, total);
+          var text = await widget.ai.generateSection(
+            widget.config,
+            section,
+            i,
+            total,
+            onStatus: (st) => _set(() => _status = '$section\n$st'),
+          );
           if (!mounted || _cancelled) return;
 
-          // Кыргыз грамматика плагини: шашылбай текшерип, оңдойт
+          // Грамматика плагини: шашылбай текшерип, оңдойт
           if (_checkGrammar) {
             _set(() {
-              _status = '$section\nГрамматика текшерилүүдө...';
+              _status = '$section\n${_grammar.statusChecking}';
               _progress = 0.06 + ((i + 0.5) / total) * 0.80;
             });
-            final rep = await widget.ai.proofreadKyrgyz(
+            final rep = await widget.ai.proofread(
               text,
+              widget.config.language,
               onStatus: (st) => _set(() => _status = '$section\n$st'),
             );
             if (!mounted || _cancelled) return;
@@ -132,18 +145,33 @@ class _GenerationDialogState extends State<GenerationDialog> {
       }
 
       if (_cancelled) return;
+
+      // Кайталанган сөздөрдү тазалап, суралган барак санына батырабыз.
+      _set(() {
+        _status = 'Текст тазаланып, барак санына ылайыкташтырылууда...';
+        _progress = 0.96;
+      });
+      final cleaned = TextSanitizer.document(_content.toString());
+      final fitted = PageFitter.fit(cleaned, widget.config);
+      final pages = PageFitter.estimatePages(
+        MarkdownParser.parse(fitted, lang: widget.config.language),
+        widget.config,
+      );
+
+      if (_cancelled) return;
       _set(() {
         _status = _checkGrammar
-            ? 'Даяр! Грамматика текшерилди: AI редактор $_grammarRounds жолу '
-                'окуп чыкты, $_grammarFixes тамга/белги автоматтык оңдолду.'
-            : 'Даяр!';
+            ? 'Даяр! Болжол менен $pages барак. ${_grammar.name} '
+                'грамматикасын AI редактор $_grammarRounds жолу окуп чыкты, '
+                '$_grammarFixes тамга/белги автоматтык оңдолду.'
+            : 'Даяр! Болжол менен $pages барак.';
         _progress = 1;
         _done = true;
       });
 
       await Future<void>.delayed(
           Duration(milliseconds: _checkGrammar ? 1800 : 400));
-      if (mounted && !_cancelled) Navigator.pop(context, _content.toString());
+      if (mounted && !_cancelled) Navigator.pop(context, fitted);
     } catch (e) {
       _set(() {
         _error = true;

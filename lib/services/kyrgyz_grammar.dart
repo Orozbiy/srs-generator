@@ -1,3 +1,5 @@
+import 'grammar_text.dart';
+
 /// Кыргыз грамматика плагини.
 ///
 /// AI (Groq) кыргызча жазганда көп кетирген каталарды табат жана оңдойт:
@@ -15,31 +17,14 @@
 /// ордуна коюлат — ошондуктан алар эч качан бузулбайт.
 class KyrgyzGrammar {
   // ------------------------------------------------------------ коргоо
-  static final RegExp _protectRe = RegExp(
-    r'```[\s\S]*?```|\$\$[\s\S]*?\$\$|\$[^$\n]+\$',
-  );
-
+  // Бул ыкмалар тилден көз каранды эмес — иштин өзү GrammarText ичинде.
   /// Формула жана код блокторун белгилер менен алмаштырат.
-  static (String, List<String>) protect(String text) {
-    final saved = <String>[];
-    final masked = text.replaceAllMapped(_protectRe, (m) {
-      saved.add(m.group(0)!);
-      return '⟦${saved.length - 1}⟧';
-    });
-    return (masked, saved);
-  }
+  static (String, List<String>) protect(String text) =>
+      GrammarText.protect(text);
 
   /// Белгилерди кайра ордуна коёт. Бир белги жоголсо же кайталанса — null.
-  static String? restore(String masked, List<String> saved) {
-    for (var i = 0; i < saved.length; i++) {
-      if ('⟦$i⟧'.allMatches(masked).length != 1) return null;
-    }
-    var out = masked;
-    for (var i = 0; i < saved.length; i++) {
-      out = out.replaceFirst('⟦$i⟧', saved[i]);
-    }
-    return out;
-  }
+  static String? restore(String masked, List<String> saved) =>
+      GrammarText.restore(masked, saved);
 
   // ------------------------------------------------- 1) автоматтык оңдоо
   /// Кыргыз алфавитинде жок, бирок AI кошуп жиберген тамгалар.
@@ -288,50 +273,9 @@ $masked
   }
 
   /// AI жообунан ашыкча нерселерди тазалайт.
-  static String cleanResponse(String r) {
-    var s = r.trim();
-    s = s.replaceAll('<<<', '').replaceAll('>>>', '').trim();
-    // Бүт жооп ``` ичине оролгон болсо
-    final fence = RegExp(r'^```[a-zA-Z]*\n([\s\S]*?)\n```$');
-    final fm = fence.firstMatch(s);
-    if (fm != null) s = fm.group(1)!.trim();
-    // «Мына оңдолгон текст:» сыяктуу баш сөз
-    final lines = s.split('\n');
-    if (lines.length > 2) {
-      final first = lines.first.trim().toLowerCase();
-      if (first.endsWith(':') &&
-          (first.contains('текст') ||
-              first.contains('оңдол') ||
-              first.contains('мына'))) {
-        s = lines.skip(1).join('\n').trim();
-      }
-    }
-    return s;
-  }
+  static String cleanResponse(String r) => GrammarText.cleanResponse(r);
 
   /// AI жообу ишенимдүүбү: көлөмү жана таблица саптары сакталганбы.
-  static bool plausible(String before, String after) {
-    if (after.trim().isEmpty) return false;
-    final ratio = after.length / before.length.clamp(1, 1 << 30);
-    if (ratio < 0.85 || ratio > 1.2) return false;
-    int rows(String t) =>
-        t.split('\n').where((l) => l.trimLeft().startsWith('|')).length;
-    if (rows(before) != rows(after)) return false;
-    return true;
-  }
-}
-
-/// Грамматиканы текшерүүнүн жыйынтыгы.
-class GrammarReport {
-  final String text;
-
-  /// Жергиликтүү эрежелер менен оңдолгон жерлер.
-  final int autoFixes;
-
-  /// AI редактор канча жолу текстти карап чыкты.
-  final int aiRounds;
-
-  /// Акырында калган шектүү жерлер (көбүнчө туура болот).
-  final List<String> remaining;
-  const GrammarReport(this.text, this.autoFixes, this.aiRounds, this.remaining);
+  static bool plausible(String before, String after) =>
+      GrammarText.plausible(before, after);
 }

@@ -1,12 +1,20 @@
-==== START 09.10.2026 10:53:20,05 ====
+==== START 14.10.2026 13:01:06,55 ====
+
+┌─────────────────────────────────────────────────────────┐
+│ A new version of Flutter is available!                  │
+│                                                         │
+│ To update to the latest version, run "flutter upgrade". │
+└─────────────────────────────────────────────────────────┘
 Resolving dependencies...
 Downloading packages...
+  archive 4.3.0 (4.5.2 available)
   clock 1.1.2 (1.1.3 available)
   code_assets 1.2.1 (2.1.0 available)
   cross_file 0.3.5+5 (0.4.0 available)
   file_picker 8.3.7 (13.1.0 available)
   flutter_lints 3.0.2 (6.0.0 available)
   hooks 2.0.2 (2.2.0 available)
+  image 4.10.1 (4.12.0 available)
   intl 0.19.0 (0.20.3 available)
   jni_flutter 1.0.3 (1.0.4+1 available)
   lints 3.0.0 (6.1.0 available)
@@ -23,40 +31,13 @@ Downloading packages...
   record_use 0.6.0 (1.1.1 available)
   shared_preferences 2.5.5 (2.5.6 available)
   stack_trace 1.12.1 (1.12.2 available)
+  syncfusion_flutter_core 35.1.39 (35.1.40 available)
+  syncfusion_flutter_pdf 35.1.39 (35.1.40 available)
   test_api 0.7.11 (0.7.15 available)
   vector_math 2.2.0 (2.4.3 available)
   win32 5.15.0 (6.4.0 available)
   xml 7.0.1 (7.1.0 available)
 Got dependencies!
-26 packages have newer versions incompatible with dependency constraints.
+30 packages have newer versions incompatible with dependency constraints.
 Try `flutter pub outdated` for more information.
-Analyzing srs_generator...                                      
-
-   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext - lib\screens\result_screen.dart:56:28 - use_build_context_synchronously
-
-1 issue found. (ran in 2.6s)
-00:00 +0: loading C:/Users/User/Desktop/srs_generator/srs_generator/test/parser_test.dart
-00:00 +0: C:/Users/User/Desktop/srs_generator/srs_generator/test/parser_test.dart: LaTeX окулуучу текстке айланат
-00:00 +1: C:/Users/User/Desktop/srs_generator/srs_generator/test/parser_test.dart: Сап ичиндеги формулалар тазаланат
-00:00 +2: C:/Users/User/Desktop/srs_generator/srs_generator/test/parser_test.dart: Аталыштар, тизмелер жана формулалар таанылат
-00:00 +3: C:/Users/User/Desktop/srs_generator/srs_generator/test/parser_test.dart: Кайталанган аталыш бир жолу гана калат
-00:00 +4: C:/Users/User/Desktop/srs_generator/srs_generator/test/parser_test.dart: Markdown таблица таанылат
-00:00 +5: C:/Users/User/Desktop/srs_generator/srs_generator/test/parser_test.dart: chart блогу диаграммага айланат
-00:00 +6: C:/Users/User/Desktop/srs_generator/srs_generator/test/parser_test.dart: circuit жана block блоктору таанылат
-00:00 +7: C:/Users/User/Desktop/srs_generator/srs_generator/test/parser_test.dart: ``` белгисиз JSON да диаграмма болуп таанылат
-00:00 +8: C:/Users/User/Desktop/srs_generator/srs_generator/test/parser_test.dart: Кыркылган (API жабылбай калган) JSON чийки текст болуп чыкпайт
-00:00 +9: C:/Users/User/Desktop/srs_generator/srs_generator/test/parser_test.dart: Атайын тили жок ``` блогундагы формула LaTeX'тен тазаланат
-00:00 +10: C:/Users/User/Desktop/srs_generator/srs_generator/test/parser_test.dart: Акыркы | жок таблица сабы да таблица болуп чыгат
-00:00 +11: C:/Users/User/Desktop/srs_generator/srs_generator/test/parser_test.dart: Бузук JSON программаны жыкпайт
-00:00 +12: C:/Users/User/Desktop/srs_generator/srs_generator/test/export_test.dart: Кыргызча PDF каталашпай жасалат
-00:00 +13: C:/Users/User/Desktop/srs_generator/srs_generator/test/export_test.dart: Орусча PDF каталашпай жасалат
-00:00 +14: C:/Users/User/Desktop/srs_generator/srs_generator/test/export_test.dart: English PDF каталашпай жасалат
-00:00 +15: C:/Users/User/Desktop/srs_generator/srs_generator/test/export_test.dart: Word файлы жарактуу ZIP/OOXML болот
-00:00 +16: C:/Users/User/Desktop/srs_generator/srs_generator/test/export_test.dart: Узун текст көп бетке бөлүнөт
-00:00 +17: C:/Users/User/Desktop/srs_generator/srs_generator/test/widget_test.dart: Башкы бет ачылат
-00:02 +18: C:/Users/User/Desktop/srs_generator/srs_generator/test/widget_test.dart: Тема бош болсо эскертүү чыгат
-00:02 +19: All tests passed!
-Building Windows application...                                    15,4s
-√ Built build\windows\x64\runner\Debug\srs_generator.exe
-==== BUILD DONE ====
-==== LAUNCHED ====
+^C

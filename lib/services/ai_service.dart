@@ -4,7 +4,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../models/srs_config.dart';
-import 'kyrgyz_grammar.dart';
+import 'grammar.dart';
+import 'page_fitter.dart';
+import 'text_sanitizer.dart';
 
 /// Groq API (OpenAI-ге шайкеш) аркылуу текст жаратат.
 class AiService {
@@ -94,8 +96,15 @@ class AiService {
     return const {};
   }
 
+  /// Кайталоого каршы параметрлерди кабыл албаган моделдер.
+  final Set<String> _noPenalty = <String>{};
+
   Future<http.Response> _post(String model, String prompt, int maxTokens,
-      {double temperature = 0.75, String? system}) {
+      {double temperature = 0.75,
+      String? system,
+      String? continueFrom,
+      double penalty = 0}) {
+    final usePenalty = penalty > 0 && !_noPenalty.contains(model);
     return http
         .post(
           Uri.parse('$_base/chat/completions'),
@@ -107,10 +116,17 @@ class AiService {
             'model': model,
             'messages': [
               if (system != null) {'role': 'system', 'content': system},
-              {'role': 'user', 'content': prompt}
+              {'role': 'user', 'content': prompt},
+              // Улантуу: мурда жазылган текст ассистенттин жообу катары
+              // берилет, ошондо модель аны башынан жазбай, уланта берет.
+              if (continueFrom != null)
+                {'role': 'assistant', 'content': continueFrom},
             ],
             'temperature': temperature,
             'max_tokens': maxTokens,
+            // Бир сөздү жүз жолу кайталап жазып кетпеши үчүн.
+            if (usePenalty) 'frequency_penalty': penalty,
+            if (usePenalty) 'presence_penalty': 0.2,
             ..._reasoningParams(model),
           }),
         )
@@ -139,8 +155,13 @@ class AiService {
       (await _request(prompt, maxTokens: maxTokens, system: system)).text;
 
   /// Жооп жана ал токендин чегинен улам үзүлүп калдыбы.
+  /// [continueFrom] берилсе — мурда жазылган тексттин уландысы суралат.
   Future<({String text, bool truncated})> _request(String prompt,
-      {int maxTokens = 2000, double temperature = 0.75, String? system}) async {
+      {int maxTokens = 2000,
+      double temperature = 0.75,
+      String? system,
+      String? continueFrom,
+      double penalty = 0}) async {
     if (_activeKey.isEmpty) {
       throw Exception(
           'API ачкыч киргизилген жок. Жөндөөлөрдөн Groq ачкычты коюңуз.');
@@ -154,7 +175,10 @@ class AiService {
       http.Response response;
       try {
         response = await _post(model, prompt, tokens,
-            temperature: temperature, system: system);
+            temperature: temperature,
+            system: system,
+            continueFrom: continueFrom,
+            penalty: penalty);
       } on TimeoutException {
         throw Exception(
             'Жооп 120 секунддан ашты. Интернет байланышын текшериңиз.');
@@ -223,6 +247,12 @@ class AiService {
 
         case 400:
           final body = response.body.toLowerCase();
+          if (penalty > 0 &&
+              !_noPenalty.contains(model) &&
+              body.contains('penalty')) {
+            _noPenalty.add(model);
+            continue;
+          }
           if (!_noReasoningParams.contains(model) &&
               _reasoningParams(model).isNotEmpty &&
               (body.contains('reasoning') ||
@@ -242,12 +272,9 @@ class AiService {
   }
 
   // ------------------------------------------------------------- промптор
-  /// Кыргызча жазганда моделге берилүүчү системалык эскертүү (грамматика).
-  String? _system(SrsConfig c) => c.language == Language.kyrgyz
-      ? 'Сен кыргыз тилинде сабаттуу, академиялык стилде жазган '
-          'окумуштуусуң. Кыргыз тилинин грамматикасын так сакта.\n'
-          '${KyrgyzGrammar.rules}'
-      : null;
+  /// Моделге берилүүчү системалык эскертүү: тандалган тилдин грамматикасы
+  /// (кыргызча, орусча жана англисче үчүн өзүнчө эрежелер).
+  String? _system(SrsConfig c) => LanguageGrammar.of(c.language).system;
 
   String _langLine(SrsConfig c) {
     switch (c.language) {
@@ -269,23 +296,29 @@ class AiService {
     if (!wantChart && !wantCircuit && !wantBlock) return '';
 
     final buf = StringBuffer();
-    buf.writeln('\nСҮРӨТ/СХЕМА (МИЛДЕТТҮҮ):');
-    buf.writeln('Бөлүмгө ылайык келсе, 1-2 сүрөттү төмөнкү JSON блок түрүндө '
-        'кош. JSON\'ду так ушул форматта жаз, башка текст кошпо.');
+    buf.writeln('\nСҮРӨТ/СХЕМА:');
+    buf.writeln('Бул бөлүмгө ылайык келсе, ЭҢ КӨП БИР сүрөт кош (керек '
+        'болбосо такыр кошпо). Сүрөттү төмөнкү JSON блок түрүндө жаз.');
+    buf.writeln('JSONду МИЛДЕТТҮҮ ТҮРДӨ БИР САПКА жаз жана сөзсүз жап '
+        '(үзүлүп калса сүрөт жоголот). Бир эле маалыматты эки жолу '
+        'сүрөткө салба.');
+    buf.writeln('caption ичине "1-сүрөт" деген номерди жазба — номер '
+        'автоматтык коюлат, сен түшүндүрмөнү гана жаз.');
 
     if (wantChart) {
       buf.writeln('''
 График үчүн:
 ```chart
-{"title":"Аталышы","type":"line","x":"X огунун белгиси","y":"Y огунун белгиси","caption":"1-сүрөт. Түшүндүрмө","series":[{"name":"Сызыктын аты","points":[[0,0],[1,2],[2,4],[3,6]]}]}
+{"title":"Аталышы","type":"line","x":"X огунун белгиси","y":"Y огунун белгиси","caption":"Түшүндүрмө","series":[{"name":"Сызыктын аты","points":[[2018,3.2],[2019,3.5],[2020,3.9]]}]}
 ```
-"type": "line", "bar" же "scatter". points — реалдуу сандар, 5-12 чекит.''');
+"type": "line", "bar" же "scatter". points — реалдуу сандар, 5-12 чекит.
+x мааниси жыл болсо жылды өзүн жаз (2018, 2019 ...).''');
     }
     if (wantCircuit) {
       buf.writeln('''
 Электр схемасы үчүн:
 ```circuit
-{"title":"Аталышы","layout":"series","source":"U = 12 В","caption":"2-сүрөт. Түшүндүрмө","elements":[{"kind":"R","label":"R1 = 10 Ом"},{"kind":"C","label":"C1 = 100 мкФ"}]}
+{"title":"Аталышы","layout":"series","source":"U = 12 В","caption":"Түшүндүрмө","elements":[{"kind":"R","label":"R1 = 10 Ом"},{"kind":"C","label":"C1 = 100 мкФ"}]}
 ```
 "layout": "series" же "parallel". kind: R, C, L, D, S, M.''');
     }
@@ -293,7 +326,7 @@ class AiService {
       buf.writeln('''
 Блок-схема үчүн:
 ```block
-{"title":"Аталышы","caption":"3-сүрөт. Алгоритм","nodes":["Башталышы","Маалымат киргизүү","Шарт аткарылдыбы?","Натыйжаны чыгаруу","Аягы"],"shapes":["start","process","decision","process","end"]}
+{"title":"Аталышы","caption":"Алгоритм","nodes":["Башталышы","Маалымат киргизүү","Шарт аткарылдыбы?","Натыйжаны чыгаруу","Аягы"],"shapes":["start","process","decision","process","end"]}
 ```
 shapes: start, process, decision, end.''');
     }
@@ -388,52 +421,93 @@ $doc
     return titles;
   }
 
+  /// Бир бөлүмгө тийиштүү сөз саны. Барак саны, жазуунун өлчөмү (кол жазма
+  /// тамгалары басма тамгадан эки эсе чоң) эсепке алынат.
+  int sectionWords(SrsConfig config, int total) {
+    final all = PageFitter.totalWords(config);
+    // 10% ашыгыраак суралат — кийин артыкчасы кыскартылат, кем болсо
+    // толуктай албайбыз.
+    return (all * 1.1 / (total < 1 ? 1 : total)).round().clamp(90, 900);
+  }
+
   Future<String> generateSection(
     SrsConfig config,
     String sectionTitle,
     int index,
-    int total,
-  ) async {
-    final words = (config.pageCount.value * 350) ~/ total;
+    int total, {
+    void Function(String status)? onStatus,
+  }) async {
+    final words = sectionWords(config, total);
     final doc = _docForSection(config, index, total);
 
     final prompt = '''
 ${config.subjectName} предметинен "${config.topic}" темасындагы СРСтин
 "$sectionTitle" бөлүмүн жаз.
 ${_langLine(config)}
-Болжол менен $words сөз. Академиялык, илимий стилде.
+КӨЛӨМҮ: $words сөз (±15%). Мындан ашык жазба — ашыгы кесилип ташталат.
+Академиялык, илимий стилде, кайталоосуз.
 $doc
 ${_formulaRules(config)}
 Керек болсо markdown таблица колдон (| бага | бага |).
 ${_diagramRules(config)}
 
 Бөлүмдүн аталышын кайра жазба, дароо мазмундан башта.
+Бир эле ойду же сөздү кайра-кайра жазба.
 ''';
 
-    final first = await _request(prompt,
-        maxTokens: (words * 2.6).round().clamp(700, 3200),
+    final tokens = (words * 2.8).round().clamp(700, 3200);
+    var first = await _request(prompt,
+        maxTokens: tokens,
         temperature: 0.6,
+        penalty: 0.35,
         system: _system(config));
-    if (!first.truncated) return first.text;
 
-    // Токен чегинен улам үзүлүп калса — улантып бүтүрөбүз.
-    final tail = first.text.length > 400
-        ? first.text.substring(first.text.length - 400)
-        : first.text;
-    try {
-      final rest = await _request('''
-$prompt
-
-Мурда жазылганы (акыркы бөлүгү):
-...$tail
-
-Ушул жерден УЛАНТЫП, бөлүмдү аягына чыгар. Жазылганды кайталаба,
-баш сөз жазба, дароо улант.
-''', maxTokens: 1400, temperature: 0.6, system: _system(config));
-      return '${first.text}\n${rest.text}';
-    } catch (_) {
-      return first.text;
+    // КАЙТАЛООНУ ТЕКШЕРҮҮ: модель бир сөздү же сөз айкашын кайра-кайра
+    // жазып таштаса, тазалап коюу аз — бөлүмдү кайра жаздырабыз.
+    if (TextSanitizer.hasLoop(first.text)) {
+      onStatus?.call('Кайталоо табылды — бөлүм кайра жазылууда...');
+      try {
+        final retry = await _request(prompt,
+            maxTokens: tokens,
+            temperature: 0.45,
+            penalty: 0.6,
+            system: _system(config));
+        // Кайсынысы таза болсо, ошону алабыз.
+        if (TextSanitizer.loopWords(retry.text) <
+            TextSanitizer.loopWords(first.text)) {
+          first = retry;
+        }
+      } catch (_) {
+        // кайра жазылбаса да, тазаланган нускасы калат
+      }
     }
+
+    var text = TextSanitizer.deloop(first.text);
+    var truncated = first.truncated;
+
+    // Токен чегинен улам үзүлүп калса — улантып бүтүрөбүз (эң көп 2 жолу).
+    for (var i = 0; i < 2 && truncated; i++) {
+      try {
+        final tail = text.length > 1500
+            ? text.substring(text.length - 1500)
+            : text;
+        final rest = await _request(prompt,
+            maxTokens: 900,
+            temperature: 0.6,
+            penalty: 0.4,
+            system: _system(config),
+            continueFrom: tail);
+        final add = TextSanitizer.deloop(rest.text).trim();
+        // Модель уланткандын ордуна башынан жаза баштаса — токтотобуз.
+        if (add.isEmpty || TextSanitizer.repeatsStart(text, add)) break;
+        text = '${text.trimRight()} $add';
+        truncated = rest.truncated;
+      } catch (_) {
+        break;
+      }
+    }
+
+    return TextSanitizer.section(text, sectionTitle);
   }
 
   /// ГОСТ форматындагы адабияттар тизмеси.
@@ -454,46 +528,50 @@ ${_langLine(config)}
 
   /// Бөлүмдөр табылбай калса — бүтүндөй СРСти бир жолу жазуу.
   Future<String> generateWhole(SrsConfig config) async {
-    final pages = config.pageCount.value;
+    final words = PageFitter.totalWords(config);
     final prompt = '''
 ${config.subjectName} предметинен "${config.topic}" темасында толук СРС жаз.
 ${_langLine(config)}
-Болжол менен ${pages * 350} сөз.
+КӨЛӨМҮ: $words сөз (±15%). Мындан ашык жазба.
 Структура: Киришүү, Негизги бөлүм, Эсептөөлөр, Корутунду, Адабияттар.
 ${_formulaRules(config)}
 ${_diagramRules(config)}
 ''';
-    return _call(prompt,
-        maxTokens: (pages * 350 * 2).clamp(1200, 5000),
+    final r = await _request(prompt,
+        maxTokens: (words * 2.8).round().clamp(1200, 5000),
+        penalty: 0.35,
         system: _system(config));
+    return TextSanitizer.document(r.text);
   }
 
-  // ------------------------------------------- кыргыз грамматика плагини
-  /// Текстти кыргыз грамматикасы боюнча текшерип оңдойт: адегенде так
-  /// эрежелер, анан AI редактор (керек болсо 2 жолу). Формулалар жана
-  /// схемалар корголот. AI жообу ишенимсиз болсо, мурунку текст калат —
-  /// ошондуктан текшерүү эч качан текстти бузбайт.
-  Future<GrammarReport> proofreadKyrgyz(String text,
+  // ----------------------------------------------- грамматика плагини
+  /// Текстти тандалган тилдин грамматикасы боюнча текшерип оңдойт:
+  /// адегенде так эрежелер, анан AI редактор (керек болсо 2 жолу).
+  /// Кыргызча, орусча жана англисче үчүн өз эрежелери колдонулат.
+  /// Формулалар жана схемалар корголот. AI жообу ишенимсиз болсо,
+  /// мурунку текст калат — ошондуктан текшерүү эч качан текстти бузбайт.
+  Future<GrammarReport> proofread(String text, Language language,
       {void Function(String status)? onStatus}) async {
     if (text.trim().isEmpty) return GrammarReport(text, 0, 0, const []);
-    final prot = KyrgyzGrammar.protect(text);
+    final g = LanguageGrammar.of(language);
+    final prot = GrammarText.protect(text);
     final saved = prot.$2;
-    final fixed = KyrgyzGrammar.autoFix(prot.$1);
+    final fixed = g.autoFix(prot.$1);
     var masked = fixed.$1;
     var autoFixes = fixed.$2;
     var rounds = 0;
 
     for (var round = 0; round < 2; round++) {
-      final hints = KyrgyzGrammar.findIssues(masked);
+      final hints = g.findIssues(masked);
       // Экинчи айлампа шектүү жер калса гана жасалат
       if (round > 0 && hints.isEmpty) break;
       onStatus?.call(round == 0
-          ? 'Кыргыз грамматикасы текшерилүүдө...'
+          ? g.statusChecking
           : 'Калган каталар кайра текшерилүүдө...');
       ({String text, bool truncated}) r;
       try {
         r = await _request(
-          KyrgyzGrammar.proofreadPrompt(masked, hints),
+          g.proofreadPrompt(masked, hints),
           maxTokens: (masked.length / 1.6).round().clamp(800, 6000),
           temperature: 0.15,
         );
@@ -501,27 +579,29 @@ ${_diagramRules(config)}
         break; // текшерүү болбосо да, СРС токтобойт
       }
       if (r.truncated) break;
-      final out = KyrgyzGrammar.cleanResponse(r.text);
-      if (KyrgyzGrammar.restore(out, saved) == null) break;
-      if (!KyrgyzGrammar.plausible(masked, out)) break;
-      final again = KyrgyzGrammar.autoFix(out);
+      final out = GrammarText.cleanResponse(r.text);
+      if (GrammarText.restore(out, saved) == null) break;
+      if (!GrammarText.plausible(masked, out)) break;
+      // Редактор да циклге түшүп калышы мүмкүн — текшерип алабыз.
+      if (TextSanitizer.loopWords(out) > 0) break;
+      final again = g.autoFix(out);
       masked = again.$1;
       autoFixes += again.$2;
       rounds++;
     }
 
-    final restored = KyrgyzGrammar.restore(masked, saved) ?? text;
-    return GrammarReport(
-        restored, autoFixes, rounds, KyrgyzGrammar.findIssues(masked));
+    final restored = GrammarText.restore(masked, saved) ?? text;
+    return GrammarReport(restored, autoFixes, rounds, g.findIssues(masked));
   }
 
   /// Бөлүмдөрдүн аталыштарын текшерет (саны дал келбесе — өзгөртпөйт).
-  Future<List<String>> proofreadTitles(List<String> titles) async {
+  Future<List<String>> proofreadTitles(
+      List<String> titles, Language language) async {
     if (titles.isEmpty) return titles;
     final joined = [
       for (var i = 0; i < titles.length; i++) '${i + 1}. ${titles[i]}'
     ].join('\n');
-    final rep = await proofreadKyrgyz(joined);
+    final rep = await proofread(joined, language);
     final numbered = RegExp(r'^\s*\d+[.)]\s*(.+)$');
     final out = <String>[];
     for (final line in rep.text.split('\n')) {

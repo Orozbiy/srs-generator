@@ -6,6 +6,7 @@ import '../models/srs_config.dart';
 import '../models/handwriting_style.dart';
 import '../services/ai_service.dart';
 import '../services/document_reader.dart';
+import '../services/license_service.dart';
 import '../services/prefs_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/generation_dialog.dart';
@@ -206,6 +207,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     if (!_ai.hasKey) {
       _showMissingKey();
+      return;
+    }
+    if (!await LicenseService.isActivated()) {
+      _snack('Учурда жеткиликсиз. Администратор менен байланышыңыз.');
       return;
     }
     if (_author.student.trim().isEmpty) {

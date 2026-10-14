@@ -59,6 +59,14 @@ class _ResultScreenState extends State<ResultScreen> {
     }
   }
 
+  /// Чыныгы барак саны (белгилүү болсо) жана суралганы.
+  String _pagesLabel(SrsConfig config) {
+    final asked = config.pageCount.value;
+    if (record.pages <= 0) return config.pageCount.label(config.language);
+    if (record.pages == asked) return '$asked барак';
+    return '${record.pages} барак (суралганы: $asked)';
+  }
+
   @override
   Widget build(BuildContext context) {
     final config = record.config;
@@ -111,7 +119,7 @@ class _ResultScreenState extends State<ResultScreen> {
                 const SizedBox(height: 6),
                 Text(
                   '${config.subjectName} · ${config.language.label} · '
-                  '${config.pageCount.label(config.language)} · '
+                  '${_pagesLabel(config)} · '
                   '${record.diagramCount} сүрөт · '
                   '${DateFormat('dd.MM.yyyy HH:mm').format(record.createdAt)}',
                   style: const TextStyle(color: Colors.white70, fontSize: 12.5),

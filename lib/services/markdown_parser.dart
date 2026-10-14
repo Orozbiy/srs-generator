@@ -2,12 +2,74 @@ import 'dart:convert';
 
 import '../models/diagram_spec.dart';
 import '../models/doc_block.dart';
+import '../models/srs_config.dart';
 import 'latex_text.dart';
 
 /// AI кайтарган markdown текстти PDF жана Word экөө тең колдоно турган
 /// блокторго бөлөт.
 class MarkdownParser {
-  static List<DocBlock> parse(String content, {bool markFormulas = false}) {
+  /// [lang] берилсе, сүрөттөрдүн жазуулары «1-сүрөт», «2-сүрөт» деп
+  /// кезеги менен номерленет.
+  static List<DocBlock> parse(String content,
+      {bool markFormulas = false, Language? lang}) {
+    final out = _parse(content, markFormulas, <String>{});
+    _numberFigures(out, lang);
+    return out;
+  }
+
+  /// Бир эле маалыматтан жасалган сүрөт эки жолу кирип калбашы үчүн
+  /// ар бир диаграмманын «изи» сакталат.
+  static String _signature(DiagramSpec spec) {
+    final data = Map<String, dynamic>.from(spec.data)
+      ..remove('caption')
+      ..remove('title');
+    return '${spec.kind.index}|${jsonEncode(data)}';
+  }
+
+  static final RegExp _figurePrefix = RegExp(
+    r'^\s*(?:\d+\s*[-–—.]?\s*(?:сүрөтү|сүрөт|сурот|сурет)'
+    r'|(?:сүрөт|рисунок|рис|figure|fig)\.?\s*\d+)\s*[.:)\-–—]*\s*',
+    caseSensitive: false,
+    unicode: true,
+  );
+
+  static String _figureLabel(int n, Language? lang) {
+    switch (lang) {
+      case Language.russian:
+        return 'Рисунок $n.';
+      case Language.english:
+        return 'Figure $n.';
+      default:
+        return '$n-сүрөт.';
+    }
+  }
+
+  static void _numberFigures(List<DocBlock> blocks, Language? lang) {
+    if (lang == null) return;
+    var n = 0;
+    for (var i = 0; i < blocks.length; i++) {
+      final b = blocks[i];
+      final spec = b.diagram;
+      if (b.type != BlockType.diagram || spec == null) continue;
+      n++;
+      var rest = spec.caption.replaceFirst(_figurePrefix, '').trim();
+      if (rest.isEmpty) rest = spec.title.trim();
+      final label = _figureLabel(n, lang);
+      blocks[i] = DocBlock(
+        BlockType.diagram,
+        b.text,
+        diagram: DiagramSpec(
+          kind: spec.kind,
+          title: spec.title,
+          caption: rest.isEmpty ? label : '$label $rest',
+          data: spec.data,
+        ),
+      );
+    }
+  }
+
+  static List<DocBlock> _parse(
+      String content, bool markFormulas, Set<String> seen) {
     String inl(String t) => LatexText.inline(t, mark: markFormulas);
     final out = <DocBlock>[];
     final raw = content.split('\n');
@@ -45,7 +107,7 @@ class MarkdownParser {
         i = j;
         if (kind != null) {
           final spec = DiagramSpec.tryParse(kind, buf.join('\n'));
-          if (spec != null) {
+          if (spec != null && seen.add(_signature(spec))) {
             out.add(DocBlock(BlockType.diagram, spec.title, diagram: spec));
           }
         } else {
@@ -55,8 +117,7 @@ class MarkdownParser {
           final hasTable = buf.any((b) => _isTableRow(b.trim()));
           final prose = buf.any((b) => b.trim().split(RegExp(r'\s+')).length > 5);
           if (hasTable || prose) {
-            out.addAll(parse(body.replaceAll('`', ''),
-                markFormulas: markFormulas));
+            out.addAll(_parse(body.replaceAll('`', ''), markFormulas, seen));
           } else {
             for (final b in buf) {
               final t = b.trim();
@@ -92,7 +153,7 @@ class MarkdownParser {
         }
         if (closed) {
           final spec = _guessSpec(buf.toString());
-          if (spec != null) {
+          if (spec != null && seen.add(_signature(spec))) {
             out.add(DocBlock(BlockType.diagram, spec.title, diagram: spec));
           }
           i = j;

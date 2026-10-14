@@ -238,32 +238,72 @@ class DiagramService {
         maxY = math.max(maxY, pt.y);
       }
     }
-    if (minX == maxX) maxX = minX + 1;
-    if (minY == maxY) maxY = minY + 1;
-    // нөлдү камтуу — окшуу графиктер үчүн табигый
-    if (minY > 0) minY = 0;
-    if (minX > 0) minX = 0;
-    final padY = (maxY - minY) * 0.08;
-    maxY += padY;
+    if (!minX.isFinite || !minY.isFinite) return;
+
+    final isBar = spec.chartType == 'bar';
+
+    if (minX == maxX) {
+      minX -= 1;
+      maxX += 1;
+    }
+    if (minY == maxY) {
+      final d = minY.abs() < 1e-9 ? 1.0 : minY.abs() * 0.1;
+      minY -= d;
+      maxY += d;
+    }
+
+    // Y огу: мамычалуу график ар дайым нөлдөн башталат. Сызыктуу графикте
+    // нөл маалыматка жакын турганда гана кошулат — болбосо жылдык көлөм
+    // (мисалы 3.6·10⁹) сыяктуу чоң сандар бурчка кысылып, график окулбай
+    // калат (мурдагы ката ушул болчу).
+    if (isBar) {
+      if (minY > 0) minY = 0;
+      if (maxY < 0) maxY = 0;
+    } else if (minY > 0 && minY <= (maxY - minY) * 0.45) {
+      minY = 0;
+    }
+
+    final yAxis = _axis(minY, maxY, 5);
+    minY = yAxis.$1;
+    maxY = yAxis.$2;
+    final yTicks = _ticks(yAxis.$1, yAxis.$2, yAxis.$3);
+
+    // X огу эч качан нөлгө мажбурланбайт: жылдар (2000...2025) өз
+    // диапазонунда чийилиши керек.
+    final List<double> xTicks;
+    if (isBar) {
+      final xs = <double>{
+        for (final s in series)
+          for (final pt in s.points) pt.x
+      }.toList()
+        ..sort();
+      final gap =
+          xs.length > 1 ? (xs.last - xs.first) / (xs.length - 1) : 1.0;
+      minX = xs.first - gap * 0.7;
+      maxX = xs.last + gap * 0.7;
+      xTicks = xs.length <= 10 ? xs : _ticks(minX, maxX, (maxX - minX) / 5);
+    } else {
+      final xAxis = _axis(minX, maxX, 5);
+      minX = xAxis.$1;
+      maxX = xAxis.$2;
+      xTicks = _ticks(xAxis.$1, xAxis.$2, xAxis.$3);
+    }
 
     double px(double x) =>
         plot.left + (x - minX) / (maxX - minX) * plot.width;
     double py(double y) =>
         plot.bottom - (y - minY) / (maxY - minY) * plot.height;
 
-    const divs = 5;
-    for (var i = 0; i <= divs; i++) {
-      final y = plot.top + plot.height * i / divs;
+    for (final value in yTicks) {
+      final y = py(value);
       p.line(Offset(plot.left, y), Offset(plot.right, y), fade: 0.72, w: 0.55);
-      final value = maxY - (maxY - minY) * i / divs;
       final tp = _painter(_fmt(value),
           size: 9, maxWidth: 52, align: TextAlign.right);
       tp.paint(c, Offset(plot.left - 8 - tp.width, y - tp.height / 2));
     }
-    for (var i = 0; i <= divs; i++) {
-      final x = plot.left + plot.width * i / divs;
+    for (final value in xTicks) {
+      final x = px(value);
       p.line(Offset(x, plot.top), Offset(x, plot.bottom), fade: 0.72, w: 0.55);
-      final value = minX + (maxX - minX) * i / divs;
       _text(c, _fmt(value), Offset(x, plot.bottom + 5),
           size: 9, centerX: true, maxWidth: 70, align: TextAlign.center);
     }
@@ -285,7 +325,6 @@ class DiagramService {
           size: 10);
     }
 
-    final isBar = spec.chartType == 'bar';
     for (var si = 0; si < series.length; si++) {
       final s = series[si];
       final pts = [...s.points]..sort((a, b) => a.x.compareTo(b.x));
@@ -350,13 +389,70 @@ class DiagramService {
     }
   }
 
+  /// Октун чектерин «жумшак» сандарга тегеректейт: кадам 1, 2, 2.5 же 5
+  /// × 10ⁿ болот, ошондо белгилер 2000, 2005, 2010 ... болуп окулат.
+  /// Кайтарары: (башы, аягы, кадам).
+  static (double, double, double) _axis(double min, double max, int divs) {
+    if (!(max > min)) return (min, min + 1.0, 1.0);
+    final raw = (max - min) / divs;
+    final exp = (math.log(raw) / math.ln10).floor();
+    final mag = math.pow(10, exp).toDouble();
+    final norm = raw / mag;
+    final double mult;
+    if (norm <= 1) {
+      mult = 1.0;
+    } else if (norm <= 2) {
+      mult = 2.0;
+    } else if (norm <= 2.5) {
+      mult = 2.5;
+    } else if (norm <= 5) {
+      mult = 5.0;
+    } else {
+      mult = 10.0;
+    }
+    final step = mult * mag;
+    final lo = (min / step).floor() * step;
+    var hi = (max / step).ceil() * step;
+    if (hi <= lo) hi = lo + step;
+    return (lo, hi, step);
+  }
+
+  static List<double> _ticks(double lo, double hi, double step) {
+    if (step <= 0 || !step.isFinite) return [lo, hi];
+    final n = ((hi - lo) / step).round().clamp(1, 12);
+    return [for (var i = 0; i <= n; i++) lo + step * i];
+  }
+
+  static const List<String> _supDigits = [
+    '⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹',
+  ];
+
+  static String _sup(int n) {
+    final sign = n < 0 ? '⁻' : '';
+    final digits = n.abs().toString();
+    final buf = StringBuffer(sign);
+    for (final ch in digits.split('')) {
+      final i = int.tryParse(ch);
+      buf.write(i == null ? ch : _supDigits[i]);
+    }
+    return buf.toString();
+  }
+
   static String _fmt(double v) {
-    if (v == v.roundToDouble() && v.abs() < 100000) {
-      return v.toInt().toString();
+    if (!v.isFinite) return '';
+    if (v == 0) return '0';
+    final a = v.abs();
+    if (a >= 1e5 || a < 1e-3) {
+      final exp = (math.log(a) / math.ln10).floor();
+      final mant = v / math.pow(10, exp);
+      final ms = mant.abs() >= 9.995
+          ? mant.toStringAsFixed(0)
+          : mant.toStringAsFixed(1);
+      return '$ms·10${_sup(exp)}';
     }
-    if (v.abs() >= 1000 || (v.abs() < 0.01 && v != 0)) {
-      return v.toStringAsExponential(1);
-    }
+    if (v == v.roundToDouble()) return v.toInt().toString();
+    if (a >= 100) return v.toStringAsFixed(0);
+    if (a >= 10) return v.toStringAsFixed(1);
     return v.toStringAsFixed(2);
   }
 

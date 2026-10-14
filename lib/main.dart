@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'screens/intro_screen.dart';
+import 'screens/license_gate_screen.dart';
 import 'theme/app_theme.dart';
 
 void main() {
@@ -17,7 +17,7 @@ class SrsApp extends StatelessWidget {
       title: 'СРС Генератор',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
-      home: const IntroScreen(),
+      home: const LicenseGateScreen(),
     );
   }
 }
