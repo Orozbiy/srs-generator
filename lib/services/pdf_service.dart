@@ -132,29 +132,7 @@ class PdfService {
     required pw.Font italic,
   }) {
     final lang = config.language;
-    final isEn = lang == Language.english;
-
-    String ministry() {
-      switch (lang) {
-        case Language.kyrgyz:
-          return 'КЫРГЫЗ РЕСПУБЛИКАСЫНЫН БИЛИМ БЕРҮҮ ЖАНА ИЛИМ МИНИСТРЛИГИ';
-        case Language.russian:
-          return 'МИНИСТЕРСТВО ОБРАЗОВАНИЯ И НАУКИ КЫРГЫЗСКОЙ РЕСПУБЛИКИ';
-        case Language.english:
-          return 'MINISTRY OF EDUCATION AND SCIENCE OF THE KYRGYZ REPUBLIC';
-      }
-    }
-
-    String heading() {
-      switch (lang) {
-        case Language.kyrgyz:
-          return 'СТУДЕНТТИН ӨЗ АЛДЫНЧА ИШИ';
-        case Language.russian:
-          return 'САМОСТОЯТЕЛЬНАЯ РАБОТА СТУДЕНТА';
-        case Language.english:
-          return 'INDEPENDENT STUDENT WORK';
-      }
-    }
+    final year = dateStr.split('.').last;
 
     String t(String ky, String ru, String en) {
       switch (lang) {
@@ -167,117 +145,86 @@ class PdfService {
       }
     }
 
-    final org = <String>[
-      if (author.university.isNotEmpty) author.university.toUpperCase(),
-      if (author.faculty.isNotEmpty) author.faculty,
-      if (author.department.isNotEmpty) author.department,
-    ];
+    String v(String s) => s.trim().isEmpty ? '_______________' : s.trim();
+
+    final ministry = t(
+        'КЫРГЫЗ РЕСПУБЛИКАСЫНЫН ИЛИМ, ЖОГОРКУ БИЛИМ БЕРҮҮ ЖАНА ИННОВАЦИЯЛАР МИНИСТРЛИГИ',
+        'МИНИСТЕРСТВО НАУКИ, ВЫСШЕГО ОБРАЗОВАНИЯ И ИННОВАЦИЙ КЫРГЫЗСКОЙ РЕСПУБЛИКИ',
+        'MINISTRY OF SCIENCE, HIGHER EDUCATION AND INNOVATION OF THE KYRGYZ REPUBLIC');
+    final uni = author.universityFor(lang);
+    final fac = author.facultyFor(lang);
+    final dep = author.departmentLine(lang);
+
+    final done = t('Аткарган', author.studentFemale ? 'Выполнила' : 'Выполнил',
+        'Prepared by');
+    final checked = t('Текшерген',
+        author.teacherFemale ? 'Проверила' : 'Проверил', 'Checked by');
+    final group = v(author.group);
+    final groupLabel = t('Топ', 'Группа', 'Group');
+    final subjectLine = t('«${config.subjectName}» дисциплинасы боюнча',
+        'по дисциплине «${config.subjectName}»',
+        'in the discipline "${config.subjectName}"');
+    final dateLine = t('«____» ______________ $year-ж.',
+        '«____» ______________ $year г.', '____ / ____ / $year');
+
+    pw.Widget c(String s, pw.Font f, double size, {double after = 4}) =>
+        pw.Padding(
+          padding: pw.EdgeInsets.only(bottom: after),
+          child: pw.Text(s,
+              style: pw.TextStyle(font: f, fontSize: size),
+              textAlign: pw.TextAlign.center),
+        );
+
+    pw.Widget r(String s, pw.Font f, {double after = 3}) => pw.Padding(
+          padding: pw.EdgeInsets.only(bottom: after),
+          child: pw.Text(s,
+              style: pw.TextStyle(font: f, fontSize: 11),
+              textAlign: pw.TextAlign.right),
+        );
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.center,
       children: [
-        pw.SizedBox(height: 14),
-        pw.Text(
-          ministry(),
-          style: pw.TextStyle(font: bold, fontSize: 10),
-          textAlign: pw.TextAlign.center,
-        ),
-        pw.SizedBox(height: 10),
-        for (final line in org) ...[
-          pw.Text(
-            line,
-            style: pw.TextStyle(font: bold, fontSize: 11),
-            textAlign: pw.TextAlign.center,
-          ),
-          pw.SizedBox(height: 4),
-        ],
         pw.SizedBox(height: 6),
-        pw.Divider(thickness: 1),
-        pw.SizedBox(height: 46),
+        c(ministry, regular, 10.5, after: 4),
+        if (uni.isNotEmpty) c(uni.toUpperCase(), regular, 10.5, after: 14),
+        if (author.fullTitle && fac.isNotEmpty)
+          c(fac.toUpperCase(), bold, 11, after: 4),
+        if (author.fullTitle && dep.isNotEmpty) c(dep, italic, 9.5, after: 0),
+        pw.Spacer(flex: 3),
         pw.Text(
-          heading(),
-          style: pw.TextStyle(font: bold, fontSize: 16),
-          textAlign: pw.TextAlign.center,
+          lang == Language.english ? 'SRS' : 'СРС',
+          style: pw.TextStyle(font: bold, fontSize: 60),
         ),
-        pw.SizedBox(height: 10),
-        pw.Text(
-          isEn ? '(SRS)' : '(СРС)',
-          style: pw.TextStyle(font: italic, fontSize: 12),
-        ),
-        pw.SizedBox(height: 34),
-        pw.Container(
-          padding: const pw.EdgeInsets.all(16),
-          decoration: pw.BoxDecoration(
-            border: pw.Border.all(color: PdfColors.grey400),
-            borderRadius: pw.BorderRadius.circular(4),
-          ),
-          child: pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              _row(t('Предмет:', 'Предмет:', 'Subject:'), config.subjectName,
-                  bold, regular),
-              pw.SizedBox(height: 8),
-              _row(t('Тема:', 'Тема:', 'Topic:'), config.topic, bold, regular),
-              pw.SizedBox(height: 8),
-              _row(
-                t('Барак саны:', 'Количество страниц:', 'Pages:'),
-                '${config.pageCount.value}',
-                bold,
-                regular,
-              ),
-            ],
-          ),
-        ),
-        pw.SizedBox(height: 56),
-        pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.end,
-          children: [
-            pw.SizedBox(
-              width: 250,
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  _row(t('Аткарган:', 'Выполнил(а):', 'Prepared by:'),
-                      author.student, bold, regular),
-                  pw.SizedBox(height: 6),
-                  _row(t('Топ:', 'Группа:', 'Group:'), author.group, bold,
-                      regular),
-                  pw.SizedBox(height: 6),
-                  _row(t('Текшерген:', 'Проверил(а):', 'Checked by:'),
-                      author.teacher, bold, regular),
-                  pw.SizedBox(height: 6),
-                  _row(t('Дата:', 'Дата:', 'Date:'), dateStr, bold, regular),
-                ],
-              ),
+        pw.SizedBox(height: 14),
+        c(subjectLine, bold, 11.5, after: 6),
+        pw.SizedBox(height: 22),
+        c('${t('Тема', 'Тема', 'Topic')}: ${config.topic}', bold, 11,
+            after: 0),
+        pw.Spacer(flex: 3),
+        pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.SizedBox(
+            width: 270,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
+              children: [
+                r('$done: ${v(author.student)}', regular),
+                r('$groupLabel: $group', regular, after: 8),
+                r('$checked: ${v(author.teacher)}', regular, after: 8),
+                r('${t('Баасы', 'Оценка', 'Grade')}: ____________________',
+                    regular),
+                r(dateLine, regular, after: 0),
+              ],
             ),
-          ],
+          ),
         ),
-        pw.Spacer(),
-        pw.Divider(thickness: 1),
-        pw.SizedBox(height: 8),
-        pw.Text(
-          t('${dateStr.split('.').last} - жыл',
-              '${dateStr.split('.').last} г.', dateStr.split('.').last),
-          style: pw.TextStyle(font: regular, fontSize: 11),
-        ),
+        pw.Spacer(flex: 2),
+        c('${t('Бишкек', 'Бишкек', 'Bishkek')} $year', bold, 10.5, after: 0),
       ],
     );
   }
 
-  static pw.Widget _row(
-      String label, String value, pw.Font bold, pw.Font regular) {
-    return pw.Row(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text(label, style: pw.TextStyle(font: bold, fontSize: 11)),
-        pw.SizedBox(width: 6),
-        pw.Expanded(
-          child: pw.Text(value.isEmpty ? '_______________' : value,
-              style: pw.TextStyle(font: regular, fontSize: 11)),
-        ),
-      ],
-    );
-  }
 
   /// Кол жазма режиминде ТЕКСТ блоктору гана кол жазма менен жазылат.
   /// Формула, сүрөт/график жана бош орундар өзгөрүүсүз калат.

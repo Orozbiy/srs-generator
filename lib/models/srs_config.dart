@@ -292,9 +292,23 @@ class AuthorInfo {
   final String student;
   final String teacher;
   final String group;
+
+  /// Орусча (негизги) аталыштар.
   final String university;
   final String faculty;
   final String department;
+
+  /// Кыргызча аталыштар (бош болсо — негизгиси колдонулат).
+  final String universityKy;
+  final String facultyKy;
+  final String departmentKy;
+
+  final bool studentFemale; // Выполнила
+  final bool teacherFemale; // Проверила
+
+  /// false — кыска титул (министрлик + университет),
+  /// true — толук титул (+ факультет/институт жана кафедра).
+  final bool fullTitle;
 
   const AuthorInfo({
     this.student = '',
@@ -303,7 +317,36 @@ class AuthorInfo {
     this.university = '',
     this.faculty = '',
     this.department = '',
+    this.universityKy = '',
+    this.facultyKy = '',
+    this.departmentKy = '',
+    this.studentFemale = false,
+    this.teacherFemale = false,
+    this.fullTitle = false,
   });
+
+  String _pick(Language l, String ru, String ky) =>
+      (l == Language.kyrgyz && ky.trim().isNotEmpty ? ky : ru).trim();
+
+  String universityFor(Language l) => _pick(l, university, universityKy);
+  String facultyFor(Language l) => _pick(l, faculty, facultyKy);
+  String departmentFor(Language l) => _pick(l, department, departmentKy);
+
+  /// «Кафедра «...»» сабы. Колдонуучу өзү "кафедра" деп жазса, тийбейт.
+  String departmentLine(Language l) {
+    final d = departmentFor(l);
+    if (d.isEmpty) return '';
+    final low = d.toLowerCase();
+    if (low.contains('каф') || low.contains('department')) return d;
+    switch (l) {
+      case Language.kyrgyz:
+        return '«$d» кафедрасы';
+      case Language.russian:
+        return 'Кафедра «$d»';
+      case Language.english:
+        return 'Department of $d';
+    }
+  }
 
   Map<String, dynamic> toJson() => {
         'student': student,
@@ -312,6 +355,12 @@ class AuthorInfo {
         'university': university,
         'faculty': faculty,
         'department': department,
+        'universityKy': universityKy,
+        'facultyKy': facultyKy,
+        'departmentKy': departmentKy,
+        'studentFemale': studentFemale,
+        'teacherFemale': teacherFemale,
+        'fullTitle': fullTitle,
       };
 
   factory AuthorInfo.fromJson(Map<String, dynamic> j) => AuthorInfo(
@@ -321,6 +370,12 @@ class AuthorInfo {
         university: (j['university'] ?? '') as String,
         faculty: (j['faculty'] ?? '') as String,
         department: (j['department'] ?? '') as String,
+        universityKy: (j['universityKy'] ?? '') as String,
+        facultyKy: (j['facultyKy'] ?? '') as String,
+        departmentKy: (j['departmentKy'] ?? '') as String,
+        studentFemale: (j['studentFemale'] ?? false) as bool,
+        teacherFemale: (j['teacherFemale'] ?? false) as bool,
+        fullTitle: (j['fullTitle'] ?? false) as bool,
       );
 }
 

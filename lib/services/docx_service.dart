@@ -138,6 +138,8 @@ class DocxService {
   static String _titlePage(
       SrsConfig config, AuthorInfo author, String dateStr) {
     final lang = config.language;
+    final year = dateStr.split('.').last;
+
     String t(String ky, String ru, String en) {
       switch (lang) {
         case Language.kyrgyz:
@@ -149,50 +151,63 @@ class DocxService {
       }
     }
 
+    String v(String s) => s.trim().isEmpty ? '_______________' : s.trim();
+
+    final uni = author.universityFor(lang);
+    final fac = author.facultyFor(lang);
+    final dep = author.departmentLine(lang);
+    final done = t('Аткарган', author.studentFemale ? 'Выполнила' : 'Выполнил',
+        'Prepared by');
+    final checked = t('Текшерген',
+        author.teacherFemale ? 'Проверила' : 'Проверил', 'Checked by');
+    final group = v(author.group);
+    final groupLabel = t('Топ', 'Группа', 'Group');
+
     final sb = StringBuffer();
     sb.write(_para(
-        t('КЫРГЫЗ РЕСПУБЛИКАСЫНЫН БИЛИМ БЕРҮҮ ЖАНА ИЛИМ МИНИСТРЛИГИ',
-            'МИНИСТЕРСТВО ОБРАЗОВАНИЯ И НАУКИ КЫРГЫЗСКОЙ РЕСПУБЛИКИ',
-            'MINISTRY OF EDUCATION AND SCIENCE OF THE KYRGYZ REPUBLIC'),
-        bold: true, center: true, size: 22));
-    for (final line in [
-      if (author.university.isNotEmpty) author.university.toUpperCase(),
-      if (author.faculty.isNotEmpty) author.faculty,
-      if (author.department.isNotEmpty) author.department,
-    ]) {
-      sb.write(_para(line, bold: true, center: true, size: 24));
+        t('КЫРГЫЗ РЕСПУБЛИКАСЫНЫН ИЛИМ, ЖОГОРКУ БИЛИМ БЕРҮҮ ЖАНА ИННОВАЦИЯЛАР МИНИСТРЛИГИ',
+            'МИНИСТЕРСТВО НАУКИ, ВЫСШЕГО ОБРАЗОВАНИЯ И ИННОВАЦИЙ КЫРГЫЗСКОЙ РЕСПУБЛИКИ',
+            'MINISTRY OF SCIENCE, HIGHER EDUCATION AND INNOVATION OF THE KYRGYZ REPUBLIC'),
+        center: true, size: 24));
+    if (uni.isNotEmpty) {
+      sb.write(_para(uni.toUpperCase(), center: true, size: 24, after: 240));
     }
-    sb.write(_empty(6));
+    if (author.fullTitle && fac.isNotEmpty) {
+      sb.write(_para(fac.toUpperCase(), bold: true, center: true, size: 26));
+    }
+    if (author.fullTitle && dep.isNotEmpty) {
+      sb.write(_para(dep, italic: true, center: true, size: 22));
+    }
+    sb.write(_empty(author.fullTitle ? 7 : 8));
+    sb.write(_para(lang == Language.english ? 'SRS' : 'СРС',
+        bold: true, center: true, size: 120));
+    sb.write(_empty(1));
     sb.write(_para(
-        t('СТУДЕНТТИН ӨЗ АЛДЫНЧА ИШИ', 'САМОСТОЯТЕЛЬНАЯ РАБОТА СТУДЕНТА',
-            'INDEPENDENT STUDENT WORK'),
-        bold: true, center: true, size: 34));
-    sb.write(_para(lang == Language.english ? '(SRS)' : '(СРС)',
-        italic: true, center: true, size: 24));
-    sb.write(_empty(3));
-    sb.write(_para(
-        '${t('Предмет', 'Предмет', 'Subject')}: ${config.subjectName}',
+        t('«${config.subjectName}» дисциплинасы боюнча',
+            'по дисциплине «${config.subjectName}»',
+            'in the discipline "${config.subjectName}"'),
+        bold: true,
         center: true,
-        size: 26));
-    sb.write(_para('${t('Тема', 'Тема', 'Topic')}: ${config.topic}',
-        bold: true, center: true, size: 28));
-    sb.write(_empty(6));
-    sb.write(_para(
-        '${t('Аткарган', 'Выполнил(а)', 'Prepared by')}: ${author.student}',
-        right: true,
         size: 24));
-    sb.write(_para('${t('Топ', 'Группа', 'Group')}: ${author.group}',
+    sb.write(_empty(1));
+    sb.write(_para('${t('Тема', 'Тема', 'Topic')}: ${config.topic}',
+        bold: true, italic: true, center: true, size: 24));
+    sb.write(_empty(4));
+    sb.write(_para('$done: ${v(author.student)}', right: true, size: 24));
+    sb.write(_para('$groupLabel: $group',
+        right: true, size: 24, after: 120));
+    sb.write(_para('$checked: ${v(author.teacher)}',
+        right: true, size: 24, after: 120));
+    sb.write(_para('${t('Баасы', 'Оценка', 'Grade')}: ____________________',
         right: true, size: 24));
     sb.write(_para(
-        '${t('Текшерген', 'Проверил(а)', 'Checked by')}: ${author.teacher}',
+        t('«____» ______________ $year-ж.', '«____» ______________ $year г.',
+            '____ / ____ / $year'),
         right: true,
         size: 24));
-    sb.write(_empty(4));
-    sb.write(_para(
-        t('${dateStr.split('.').last} - жыл', '${dateStr.split('.').last} г.',
-            dateStr.split('.').last),
-        center: true,
-        size: 24));
+    sb.write(_empty(3));
+    sb.write(_para('${t('Бишкек', 'Бишкек', 'Bishkek')} $year',
+        bold: true, center: true, size: 24));
     return sb.toString();
   }
 

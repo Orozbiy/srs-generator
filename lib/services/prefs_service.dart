@@ -11,6 +11,12 @@ class PrefsService {
   static const _kUniversity = 'university';
   static const _kFaculty = 'faculty';
   static const _kDepartment = 'department';
+  static const _kUniversityKy = 'universityKy';
+  static const _kFacultyKy = 'facultyKy';
+  static const _kDepartmentKy = 'departmentKy';
+  static const _kStudentFemale = 'studentFemale';
+  static const _kTeacherFemale = 'teacherFemale';
+  static const _kFullTitle = 'fullTitle';
   static const _kSubject = 'lastSubject';
   static const _kLanguage = 'lastLanguage';
   static const _kPages = 'lastPages';
@@ -31,6 +37,12 @@ class PrefsService {
       university: p.getString(_kUniversity) ?? '',
       faculty: p.getString(_kFaculty) ?? '',
       department: p.getString(_kDepartment) ?? '',
+      universityKy: p.getString(_kUniversityKy) ?? '',
+      facultyKy: p.getString(_kFacultyKy) ?? '',
+      departmentKy: p.getString(_kDepartmentKy) ?? '',
+      studentFemale: p.getBool(_kStudentFemale) ?? false,
+      teacherFemale: p.getBool(_kTeacherFemale) ?? false,
+      fullTitle: p.getBool(_kFullTitle) ?? false,
     );
   }
 
@@ -42,6 +54,12 @@ class PrefsService {
     await p.setString(_kUniversity, a.university.trim());
     await p.setString(_kFaculty, a.faculty.trim());
     await p.setString(_kDepartment, a.department.trim());
+    await p.setString(_kUniversityKy, a.universityKy.trim());
+    await p.setString(_kFacultyKy, a.facultyKy.trim());
+    await p.setString(_kDepartmentKy, a.departmentKy.trim());
+    await p.setBool(_kStudentFemale, a.studentFemale);
+    await p.setBool(_kTeacherFemale, a.teacherFemale);
+    await p.setBool(_kFullTitle, a.fullTitle);
   }
 
   static Future<(Subject, Language, PageCount, bool)> lastChoice() async {

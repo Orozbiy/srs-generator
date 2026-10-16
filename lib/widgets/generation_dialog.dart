@@ -49,6 +49,24 @@ class _GenerationDialogState extends State<GenerationDialog> {
     setState(fn);
   }
 
+  /// Кайсы бөлүмдөргө сүрөт чийилет: киришүү/корутундудан башка, барак
+  /// санына жараша бирдей аралыкта (документ жүктөлсө — бирөө көп).
+  Set<int> _pickFigureSections(int total) {
+    final cfg = widget.config;
+    if (!cfg.withDiagrams || total == 0) return {};
+    final cands = <int>[
+      for (var i = 0; i < total; i++)
+        if (total <= 2 || (i > 0 && i < total - 1)) i
+    ];
+    if (cands.isEmpty) return {};
+    var want = (cfg.pageCount.value / 3).round().clamp(2, 6);
+    if ((cfg.documentText ?? '').trim().isNotEmpty) want += 1;
+    want = want.clamp(1, cands.length);
+    return {
+      for (var k = 0; k < want; k++) cands[(k * cands.length / want).floor()]
+    };
+  }
+
   Future<void> _start() async {
     try {
       _set(() {
@@ -87,6 +105,7 @@ class _GenerationDialogState extends State<GenerationDialog> {
         _content.write(text);
       } else {
         final total = _sections.length;
+        final figureAt = _pickFigureSections(total);
         for (var i = 0; i < total; i++) {
           if (_cancelled) return;
           final section = _sections[i];
@@ -122,6 +141,21 @@ class _GenerationDialogState extends State<GenerationDialog> {
             _grammarRounds += rep.aiRounds;
           }
 
+          // Сүрөт: документке жана бөлүмдүн мазмунуна таянып чийилет
+          if (figureAt.contains(i)) {
+            _set(() {
+              _status = '$section\nСүрөт чийилип жатат...';
+              _progress = 0.06 + ((i + 0.8) / total) * 0.80;
+            });
+            try {
+              text = await widget.ai
+                  .addFigure(widget.config, section, text, i, total);
+            } catch (_) {
+              // сүрөт чийилбесе да, бөлүм текст менен калат
+            }
+            if (!mounted || _cancelled) return;
+          }
+
           _content.writeln('\n## $section\n');
           _content.writeln(text);
         }
@@ -139,7 +173,7 @@ class _GenerationDialogState extends State<GenerationDialog> {
           // Адабияттар алынбаса да СРС даяр — бирок билинип турсун
           _content.writeln('\n## Колдонулган адабияттар\n');
           _content.writeln(
-              '_(Тизме алынбай калды: \$e — "Текстти текшерүү" экранынан '
+              '_(Тизме алынбай калды: $e — "Текстти текшерүү" экранынан '
               'кол менен кошсоңуз болот.)_');
         }
       }

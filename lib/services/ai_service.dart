@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../models/diagram_spec.dart';
+import '../models/doc_item.dart';
 import '../models/srs_config.dart';
 import 'grammar.dart';
 import 'page_fitter.dart';
@@ -287,50 +289,46 @@ class AiService {
     }
   }
 
-  String _diagramRules(SrsConfig c) {
-    if (!c.withDiagrams) return '';
-
-    final wantChart = c.subject.needsChart;
-    final wantCircuit = c.subject.needsCircuits;
-    final wantBlock = c.subject.needsBlockDiagram;
-    if (!wantChart && !wantCircuit && !wantBlock) return '';
-
+  /// Сүрөттүн форматтары (бардык предметтер үчүн: график жана блок-схема,
+  /// электроникада кошумча электр схемасы).
+  String _diagramFormats(SrsConfig c) {
     final buf = StringBuffer();
-    buf.writeln('\nСҮРӨТ/СХЕМА:');
-    buf.writeln('Бул бөлүмгө ылайык келсе, ЭҢ КӨП БИР сүрөт кош (керек '
-        'болбосо такыр кошпо). Сүрөттү төмөнкү JSON блок түрүндө жаз.');
-    buf.writeln('JSONду МИЛДЕТТҮҮ ТҮРДӨ БИР САПКА жаз жана сөзсүз жап '
-        '(үзүлүп калса сүрөт жоголот). Бир эле маалыматты эки жолу '
-        'сүрөткө салба.');
-    buf.writeln('caption ичине "1-сүрөт" деген номерди жазба — номер '
-        'автоматтык коюлат, сен түшүндүрмөнү гана жаз.');
-
-    if (wantChart) {
-      buf.writeln('''
-График үчүн:
+    buf.writeln('''
+График (сандык маалымат, динамика, салыштыруу үчүн):
 ```chart
 {"title":"Аталышы","type":"line","x":"X огунун белгиси","y":"Y огунун белгиси","caption":"Түшүндүрмө","series":[{"name":"Сызыктын аты","points":[[2018,3.2],[2019,3.5],[2020,3.9]]}]}
 ```
-"type": "line", "bar" же "scatter". points — реалдуу сандар, 5-12 чекит.
-x мааниси жыл болсо жылды өзүн жаз (2018, 2019 ...).''');
-    }
-    if (wantCircuit) {
+"type": "line", "bar" же "scatter". points — [сан, сан] түрүндө 5-12 чекит.
+x мааниси жыл болсо жылды өзүн жаз (2018, 2019 ...). Документте сандар
+болсо — ошолорду колдон.
+
+Блок-схема (процесс, түзүм, классификация, байланыш үчүн):
+```block
+{"title":"Аталышы","caption":"Түшүндүрмө","nodes":["Башталышы","Маалымат киргизүү","Шарт аткарылдыбы?","Натыйжаны чыгаруу","Аягы"],"shapes":["start","process","decision","process","end"]}
+```
+shapes: start, process, decision, end. nodes 4-7 даана, ар бири 2-5 сөз.''');
+    if (c.subject.needsCircuits) {
       buf.writeln('''
-Электр схемасы үчүн:
+Электр схемасы:
 ```circuit
 {"title":"Аталышы","layout":"series","source":"U = 12 В","caption":"Түшүндүрмө","elements":[{"kind":"R","label":"R1 = 10 Ом"},{"kind":"C","label":"C1 = 100 мкФ"}]}
 ```
 "layout": "series" же "parallel". kind: R, C, L, D, S, M.''');
     }
-    if (wantBlock) {
-      buf.writeln('''
-Блок-схема үчүн:
-```block
-{"title":"Аталышы","caption":"Алгоритм","nodes":["Башталышы","Маалымат киргизүү","Шарт аткарылдыбы?","Натыйжаны чыгаруу","Аягы"],"shapes":["start","process","decision","process","end"]}
-```
-shapes: start, process, decision, end.''');
-    }
-    buf.writeln('Сүрөттөрдүн caption талаасын сөзсүз толтур.');
+    return buf.toString();
+  }
+
+  /// Бүтүн СРС бир жолу жазылганда (бөлүмдөрсүз) колдонулат.
+  String _diagramRules(SrsConfig c) {
+    if (!c.withDiagrams) return '';
+    final buf = StringBuffer();
+    buf.writeln('\nСҮРӨТ/СХЕМА:');
+    buf.writeln('Текстке 2-3 сүрөт (график же блок-схема) кош. Сүрөттү '
+        'төмөнкү JSON блок түрүндө жаз.');
+    buf.writeln('JSONду МИЛДЕТТҮҮ ТҮРДӨ БИР САПКА жаз жана сөзсүз жап. '
+        'caption ичине "1-сүрөт" деген номерди жазба — номер автоматтык '
+        'коюлат. caption талаасын сөзсүз толтур.');
+    buf.writeln(_diagramFormats(c));
     return buf.toString();
   }
 
@@ -342,34 +340,71 @@ shapes: start, process, decision, end.''');
   }
 
   // ------------------------------------------- жүктөлгөн документ контексти
-  /// Бөлүмдөрдүн тизмеси үчүн: документтин башталышы (негизги мазмуну).
+  /// Бөлүмдөрдүн тизмеси үчүн: документтин аталыштары жана башталышы.
   String _docForOutline(SrsConfig config) {
     final t = config.documentText;
     if (t == null || t.trim().isEmpty) return '';
-    final clip = t.length > 6000 ? t.substring(0, 6000) : t;
-    return '\nСтудент кошумча документ жүктөдү. Бөлүмдөрдүн аталышын ушул '
-        'документтин мазмунуна дал келтирип, анын негизги темаларын камтып жаз:\n'
-        '<<<\n$clip\n>>>';
+    final head = t.length > 3500 ? t.substring(0, 3500) : t;
+    final hs = StringBuffer();
+    for (final it in DocItem.split(t)) {
+      if (!it.isHeading) continue;
+      if (hs.length + it.text.length > 1600) break;
+      hs.writeln('- ${it.text}');
+    }
+    return '\nСтудент негизги документ жүктөдү (СРС ушул документтин '
+        'мазмуну боюнча жазылат). Бөлүмдөрдүн аталышын ушул документтин '
+        'аталыштарына жана темаларына дал келтирип жаз:\n'
+        '${hs.isEmpty ? '' : 'Документтин аталыштары:\n$hs'}'
+        'Документтин башталышы:\n<<<\n$head\n>>>';
   }
 
-  /// Бөлүм үчүн: документти бөлүмдөргө бөлүп, тийиштүү бөлүгүн беребиз.
+  /// Документти бөлүмдөргө тең бөлүп, [index]-бөлүмгө тийиштүү үзүндүнү берет.
+  String _docSlice(String t, int index, int total, int maxLen) {
+    if (t.length <= maxLen) return t;
+    final chunk = t.length / (total < 1 ? 1 : total);
+    var start = (chunk * index).floor();
+    var end = (chunk * (index + 1)).ceil() + 300;
+    if (end - start > maxLen) end = start + maxLen;
+    start = start.clamp(0, t.length);
+    end = end.clamp(start, t.length);
+    final nl = t.lastIndexOf('\n', start);
+    if (nl >= 0 && start - nl < 250) start = nl + 1;
+    return t.substring(start, end).trim();
+  }
+
+  /// Бөлүм үчүн: документтин тийиштүү бөлүгү (милдеттүү түрдө колдонулат).
   String _docForSection(SrsConfig config, int index, int total) {
     final t = config.documentText;
     if (t == null || t.trim().isEmpty) return '';
-    const maxSlice = 3500;
-    String slice;
-    if (t.length <= maxSlice) {
-      slice = t;
-    } else {
-      final chunk = t.length ~/ total;
-      final start = (index * chunk).clamp(0, t.length);
-      final end = (start + maxSlice).clamp(0, t.length);
-      slice = t.substring(start, end);
+    final slice = _docSlice(t, index, total, 4200);
+    return '\nСтудент жүктөгөн документтен ушул бөлүмгө тийиштүү үзүндү. '
+        'МИЛДЕТТҮҮ: бөлүмдү ушул үзүндүдөгү факттарга, терминдерге, '
+        'сандарга, аныктамаларга жана мисалдарга таянып жаз — жалпы суу '
+        'куюп койбо. Сөзмө-сөз көчүрбө, өз сөзүң менен илимий стилде айт. '
+        'Үзүндүдө жок нерсени теманын алкагында толуктасаң болот:\n'
+        '<<<\n$slice\n>>>';
+  }
+
+  /// Документтен сүрөт/график/таблица аталыштарын жана сандык саптарды табат
+  /// (сүрөттү ошолорго таянып чийүү үчүн).
+  String _figureHints(String? doc) {
+    if (doc == null || doc.trim().isEmpty) return '';
+    final capRe = RegExp(
+        r'^(?:сүрөт|сурот|рисунок|рис|схема|диаграмма|график|figure|fig|таблица|кесте)(?![A-Za-zА-Яа-яЁёӨөҮүҢң])',
+        caseSensitive: false,
+        unicode: true);
+    final numRe = RegExp(r'\d+(?:[.,]\d+)?');
+    final out = StringBuffer();
+    for (final raw in doc.split('\n')) {
+      final line = raw.trim();
+      if (line.isEmpty || line.length > 200) continue;
+      final isCap = capRe.hasMatch(line);
+      final isData = numRe.allMatches(line).length >= 3;
+      if (!isCap && !isData) continue;
+      if (out.length + line.length > 1500) break;
+      out.writeln(line);
     }
-    return '\nСтудент жүктөгөн документтен үзүндү (маалыматтарды, терминдерди, '
-        'сандарды жана мисалдарды ушундан пайдаланып бөлүмдү толуктап жаз, '
-        'бирок сөзмө-сөз көчүрбө; документте жок нерсени да теманын '
-        'алкагында кошсоң болот):\n<<<\n$slice\n>>>';
+    return out.toString().trim();
   }
 
   // ----------------------------------------------------------- генерация
@@ -449,7 +484,6 @@ ${_langLine(config)}
 $doc
 ${_formulaRules(config)}
 Керек болсо markdown таблица колдон (| бага | бага |).
-${_diagramRules(config)}
 
 Бөлүмдүн аталышын кайра жазба, дароо мазмундан башта.
 Бир эле ойду же сөздү кайра-кайра жазба.
@@ -508,6 +542,154 @@ ${_diagramRules(config)}
     }
 
     return TextSanitizer.section(text, sectionTitle);
+  }
+
+  // ------------------------------------------------------------- сүрөттөр
+  static final RegExp _hasFigure = RegExp(
+      r'```\s*(?:chart|graph|plot|circuit|schema|scheme|block|blockdiagram|flowchart)\b',
+      caseSensitive: false);
+
+  /// Бөлүмдүн текстине (документке да таянып) АЗЫРКЫ ЭЛЕ бир сүрөт чийип,
+  /// биринчи абзацтан кийин коёт. Сүрөт чийилбей калса текст өзгөрбөйт.
+  Future<String> addFigure(SrsConfig config, String sectionTitle, String text,
+      int index, int total) async {
+    if (!config.withDiagrams) return text;
+    if (_hasFigure.hasMatch(text)) return text;
+    final block = await _figureBlock(config, sectionTitle, text, index, total);
+    if (block == null) return text;
+    return _insertAfterFirstParagraph(text, block);
+  }
+
+  Future<String?> _figureBlock(SrsConfig config, String sectionTitle,
+      String text, int index, int total) async {
+    final body = text.length > 1800 ? text.substring(0, 1800) : text;
+    final doc = config.documentText;
+    var docPart = '';
+    if (doc != null && doc.trim().isNotEmpty) {
+      final slice = _docSlice(doc, index, total, 1800);
+      final hints = _figureHints(doc);
+      docPart = '\nСтудент жүктөгөн документтен үзүндү (сүрөттү ушул '
+          'маалыматтарга, сандарга жана терминдерге таянып чий; документте '
+          'сүрөт/схема/график сүрөттөлсө — аны кайра чий):\n<<<\n$slice\n>>>'
+          '${hints.isEmpty ? '' : '\nДокументтеги сүрөт/сандык саптар:\n<<<\n$hints\n>>>'}';
+    }
+
+    final prompt = '''
+"${config.topic}" темасындагы СРСтин "$sectionTitle" бөлүмү үчүн АЗЫРКЫ ЭЛЕ
+БИР сүрөт (график же блок-схема) чий.
+${_langLine(config)}
+Бөлүмдүн мазмуну:
+<<<
+$body
+>>>
+$docPart
+Эрежелер:
+- Сүрөт бөлүмдүн мазмунуна так дал келсин, ичиндеги жазуулар кыска болсун.
+- Сандык маалымат (жылдар, өлчөмдөр, статистика) болсо — график (chart),
+  болбосо — блок-схема (block) тандап ал. Сандарды ойлоп таппа: документтен
+  же текстен ал, же теманын реалдуу, ылайыктуу маанилерин колдон.
+- JSONду БИР САПКА жаз, сөзсүз жап. caption — түшүндүрмө (номерсиз).
+${_diagramFormats(config)}
+ЖООБУҢДА ЭЧ КАНДАЙ БАШКА ТЕКСТ ЖАЗБА: бир гана ``` код блогу.
+''';
+
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final r = await _request(prompt,
+            maxTokens: 900 + attempt * 500,
+            temperature: attempt == 0 ? 0.4 : 0.2);
+        final block = _extractFigure(r.text, config);
+        if (block != null) return block;
+      } catch (_) {
+        // кийинки аракет
+      }
+    }
+    return null;
+  }
+
+  /// Модель жообунан жарактуу сүрөт блогун алат (тастыктап).
+  String? _extractFigure(String reply, SrsConfig config) {
+    String? fence;
+    String? json;
+    final fm = RegExp(r'```\s*([A-Za-z]*)\s*\n?([\s\S]*?)```').firstMatch(reply);
+    if (fm != null) {
+      fence = fm.group(1);
+      json = fm.group(2);
+    } else {
+      final a = reply.indexOf('{');
+      final b = reply.lastIndexOf('}');
+      if (a >= 0 && b > a) json = reply.substring(a, b + 1);
+    }
+    if (json == null) return null;
+    json = json.trim();
+
+    var kind = DiagramSpec.kindOf(fence ?? '');
+    Map? map;
+    try {
+      final d = jsonDecode(json);
+      if (d is Map) map = d;
+    } catch (_) {
+      return null;
+    }
+    if (map == null) return null;
+    kind ??= map['series'] is List
+        ? DiagramKind.chart
+        : map['elements'] is List
+            ? DiagramKind.circuit
+            : (map['nodes'] is List || map['steps'] is List)
+                ? DiagramKind.block
+                : null;
+    if (kind == null) return null;
+    if (kind == DiagramKind.circuit && !config.subject.needsCircuits) {
+      return null;
+    }
+
+    final spec = DiagramSpec.tryParse(kind, json);
+    if (spec == null) return null;
+    switch (kind) {
+      case DiagramKind.chart:
+        final s = spec.series;
+        if (s.isEmpty || s.any((e) => e.points.length < 2)) return null;
+        break;
+      case DiagramKind.block:
+        if (spec.nodes.length < 3) return null;
+        break;
+      case DiagramKind.circuit:
+        if (spec.elements.isEmpty) return null;
+        break;
+    }
+    final name = kind == DiagramKind.chart
+        ? 'chart'
+        : kind == DiagramKind.circuit
+            ? 'circuit'
+            : 'block';
+    final oneLine = jsonEncode(map);
+    return '```$name\n$oneLine\n```';
+  }
+
+  /// Сүрөттү текст ичиндеги биринчи узун абзацтан кийин коёт.
+  String _insertAfterFirstParagraph(String text, String block) {
+    final lines = text.split('\n');
+    var at = -1;
+    for (var i = 0; i < lines.length; i++) {
+      final t = lines[i].trim();
+      if (t.length < 120) continue;
+      if (t.startsWith('|') ||
+          t.startsWith('#') ||
+          t.startsWith('-') ||
+          t.startsWith('*') ||
+          t.startsWith(r'$') ||
+          t.startsWith('```') ||
+          t.startsWith('{')) {
+        continue;
+      }
+      at = i;
+      break;
+    }
+    if (at < 0) return '${text.trimRight()}\n\n$block\n';
+    final before = lines.sublist(0, at + 1).join('\n');
+    final after = lines.sublist(at + 1).join('\n').trimLeft();
+    return '$before\n\n$block\n\n$after'.trimRight();
   }
 
   /// ГОСТ форматындагы адабияттар тизмеси.

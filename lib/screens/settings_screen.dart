@@ -20,6 +20,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _university = TextEditingController();
   final _faculty = TextEditingController();
   final _department = TextEditingController();
+  final _universityKy = TextEditingController();
+  final _facultyKy = TextEditingController();
+  final _departmentKy = TextEditingController();
+  bool _studentFemale = false;
+  bool _teacherFemale = false;
+  bool _fullTitle = false;
 
   bool _obscure = true;
   bool _loading = true;
@@ -42,6 +48,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _university.text = a.university;
       _faculty.text = a.faculty;
       _department.text = a.department;
+      _universityKy.text = a.universityKy;
+      _facultyKy.text = a.facultyKy;
+      _departmentKy.text = a.departmentKy;
+      _studentFemale = a.studentFemale;
+      _teacherFemale = a.teacherFemale;
+      _fullTitle = a.fullTitle;
       _loading = false;
     });
   }
@@ -55,6 +67,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       university: _university.text,
       faculty: _faculty.text,
       department: _department.text,
+      universityKy: _universityKy.text,
+      facultyKy: _facultyKy.text,
+      departmentKy: _departmentKy.text,
+      studentFemale: _studentFemale,
+      teacherFemale: _teacherFemale,
+      fullTitle: _fullTitle,
     ));
     if (!mounted) return;
     Navigator.pop(context, true);
@@ -69,7 +87,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _group,
       _university,
       _faculty,
-      _department
+      _department,
+      _universityKy,
+      _facultyKy,
+      _departmentKy
     ]) {
       c.dispose();
     }
@@ -164,38 +185,106 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ],
                         ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Студент кыз (Выполнила)'),
+                          value: _studentFemale,
+                          onChanged: (v) => setState(() => _studentFemale = v),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Окутуучу аял (Проверила)'),
+                          value: _teacherFemale,
+                          onChanged: (v) => setState(() => _teacherFemale = v),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 16),
                     _card(
                       Icons.account_balance_outlined,
                       'Окуу жай',
-                      'Титул беттин жогору жагына чыгат',
+                      'СРС орусча болсо орусча, кыргызча болсо кыргызча аталыш чыгат',
                       [
+                        const Text('Титул түрү',
+                            style: TextStyle(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 8),
+                        SegmentedButton<bool>(
+                          showSelectedIcon: false,
+                          segments: const [
+                            ButtonSegment(
+                                value: false,
+                                label: Text('1. Кыска'),
+                                icon: Icon(Icons.article_outlined)),
+                            ButtonSegment(
+                                value: true,
+                                label: Text('2. Толук'),
+                                icon: Icon(Icons.account_tree_outlined)),
+                          ],
+                          selected: {_fullTitle},
+                          onSelectionChanged: (v) =>
+                              setState(() => _fullTitle = v.first),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.only(top: 6, bottom: 14),
+                          child: Text(
+                            'Кыска: министрлик + университет. '
+                            'Толук: + институт/факультет жана кафедра.',
+                            style: TextStyle(
+                                fontSize: 12.5, color: AppTheme.muted),
+                          ),
+                        ),
                         TextField(
                           controller: _university,
                           decoration: const InputDecoration(
-                            labelText: 'Университет',
-                            hintText: 'Мисалы: К. Карасаев атындагы БМУ',
+                            labelText: 'Университет (орусча)',
+                            hintText:
+                                'Кыргызский национальный университет имени Ж. Баласагына',
                             prefixIcon: Icon(Icons.apartment_outlined),
                           ),
                         ),
                         const SizedBox(height: 12),
                         TextField(
-                          controller: _faculty,
+                          controller: _universityKy,
                           decoration: const InputDecoration(
-                            labelText: 'Факультет',
-                            prefixIcon: Icon(Icons.hub_outlined),
+                            labelText: 'Университет (кыргызча)',
+                            hintText: 'Ж. Баласагын атындагы Кыргыз улуттук университети',
+                            prefixIcon: Icon(Icons.apartment_outlined),
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _department,
-                          decoration: const InputDecoration(
-                            labelText: 'Кафедра',
-                            prefixIcon: Icon(Icons.topic_outlined),
+                        if (_fullTitle) ...[
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _faculty,
+                            decoration: const InputDecoration(
+                              labelText: 'Институт / Факультет (орусча)',
+                              prefixIcon: Icon(Icons.hub_outlined),
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _facultyKy,
+                            decoration: const InputDecoration(
+                              labelText: 'Институт / Факультет (кыргызча)',
+                              prefixIcon: Icon(Icons.hub_outlined),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _department,
+                            decoration: const InputDecoration(
+                              labelText: 'Кафедра (орусча)',
+                              prefixIcon: Icon(Icons.topic_outlined),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _departmentKy,
+                            decoration: const InputDecoration(
+                              labelText: 'Кафедра (кыргызча)',
+                              prefixIcon: Icon(Icons.topic_outlined),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ],
