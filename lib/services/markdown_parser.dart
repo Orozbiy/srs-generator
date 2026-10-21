@@ -51,8 +51,10 @@ class MarkdownParser {
       final b = blocks[i];
       final spec = b.diagram;
       if (b.type != BlockType.diagram || spec == null) continue;
-      n++;
       var rest = spec.caption.replaceFirst(_figurePrefix, '').trim();
+      // Даяр документтен алынган жазуусуз сүрөт номерленбейт
+      if (spec.kind == DiagramKind.image && rest.isEmpty) continue;
+      n++;
       if (rest.isEmpty) rest = spec.title.trim();
       final label = _figureLabel(n, lang);
       blocks[i] = DocBlock(
@@ -93,6 +95,22 @@ class MarkdownParser {
 
     for (var i = 0; i < raw.length; i++) {
       final line = raw[i].trim();
+
+      // Даяр сүрөт: ![жазуусу](файлдын жолу)
+      final im = RegExp(r'^!\[(.*?)\]\((.+)\)$').firstMatch(line);
+      if (im != null) {
+        out.add(DocBlock(
+          BlockType.diagram,
+          '',
+          diagram: DiagramSpec(
+            kind: DiagramKind.image,
+            title: '',
+            caption: im.group(1)!.trim(),
+            data: {'path': im.group(2)!.trim()},
+          ),
+        ));
+        continue;
+      }
 
       // ```chart / ```circuit / ```block
       if (line.startsWith('```')) {

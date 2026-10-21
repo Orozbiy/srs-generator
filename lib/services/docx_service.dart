@@ -86,7 +86,9 @@ class DocxService {
           relId++;
           rels.writeln(
               '<Relationship Id="$id" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/$name"/>');
-          const widthCm = 14.0;
+          final widthCm = dim.$2 / dim.$1 > 1.4
+              ? (20.0 * dim.$1 / dim.$2).clamp(4.0, 14.0).toDouble()
+              : 14.0;
           final cx = (widthCm * _emuPerCm).round();
           final cy = (widthCm * dim.$2 / dim.$1 * _emuPerCm).round();
           body.write(_image(id, cx, cy, media.length));

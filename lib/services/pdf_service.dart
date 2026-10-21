@@ -455,6 +455,16 @@ class PdfService {
     }
   }
 
+  /// Сүрөттүн туурасы: тик сүрөттөр бетке бийиктикке батышы үчүн тарыраак.
+  static double _imgWidth(Uint8List png) {
+    if (png.length < 24) return 400;
+    final bd = ByteData.sublistView(png);
+    final w = bd.getUint32(16);
+    final h = bd.getUint32(20);
+    if (w == 0 || h == 0) return 400;
+    return (480.0 * w / h).clamp(120.0, 400.0).toDouble();
+  }
+
   static pw.Widget _block(DocBlock b, Uint8List? image, pw.Font bold,
       pw.Font regular, pw.Font italic, [_Hand? hw]) {
     if (hw != null) {
@@ -575,7 +585,7 @@ class PdfService {
           child: pw.Column(
             children: [
               pw.Center(
-                child: pw.Image(pw.MemoryImage(image), width: 400),
+                child: pw.Image(pw.MemoryImage(image), width: _imgWidth(image)),
               ),
               if (caption.isNotEmpty) ...[
                 pw.SizedBox(height: 5),

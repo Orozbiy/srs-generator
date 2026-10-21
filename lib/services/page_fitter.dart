@@ -98,6 +98,9 @@ class PageFitter {
             case DiagramKind.block:
               body = 400 * (50 + spec.nodes.length * 86) / 460;
               break;
+            case DiagramKind.image:
+              body = 260;
+              break;
           }
         }
         final cap = spec == null || spec.caption.isEmpty ? 0.0 : 16.0;

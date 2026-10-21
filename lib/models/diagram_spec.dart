@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-enum DiagramKind { chart, circuit, block }
+enum DiagramKind { chart, circuit, block, image }
 
 /// AI кайтарган ```chart / ```circuit / ```block блогунун мазмуну.
 class DiagramSpec {
@@ -116,6 +116,9 @@ class DiagramSpec {
     if (raw is! List) return const [];
     return raw.map((e) => e.toString().toLowerCase()).toList();
   }
+
+  // ---- image (даяр документтен алынган сүрөт) ----
+  String get imagePath => (data['path'] ?? '').toString();
 
   static double? _num(Object? v) {
     if (v is num) return v.toDouble();

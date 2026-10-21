@@ -5,10 +5,12 @@ import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../models/diagram_spec.dart';
 import '../models/doc_block.dart';
 import '../models/srs_config.dart';
 import '../models/srs_record.dart';
 import 'diagram_service.dart';
+import 'doc_importer.dart';
 import 'docx_service.dart';
 import 'markdown_parser.dart';
 import 'page_fitter.dart';
@@ -71,9 +73,10 @@ class LibraryService {
     for (var i = 0; i < blocks.length; i++) {
       final spec = blocks[i].diagram;
       if (spec == null) continue;
-      final png =
-          await DiagramService.render(spec,
-          hand: config.handwriting, handProfile: config.handProfile);
+      final png = spec.kind == DiagramKind.image
+          ? await DocImporter.loadPng(spec.imagePath)
+          : await DiagramService.render(spec,
+              hand: config.handwriting, handProfile: config.handProfile);
       if (png != null) images[i] = png;
     }
 
@@ -108,7 +111,8 @@ class LibraryService {
       String content, void Function(String status)? onProgress) async {
     var out = await _renderOnce(config, author, content, onProgress);
     final target = config.pageCount.value;
-    if (out.pages > target) {
+    // Даяр документ кыскартылбайт (asIs)
+    if (!config.asIs && out.pages > target) {
       final shorter =
           PageFitter.fit(content, config, shrinkBy: out.pages - target);
       if (shorter.trim().length < content.trim().length) {

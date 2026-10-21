@@ -657,6 +657,8 @@ ${_diagramFormats(config)}
       case DiagramKind.circuit:
         if (spec.elements.isEmpty) return null;
         break;
+      case DiagramKind.image:
+        return null;
     }
     final name = kind == DiagramKind.chart
         ? 'chart'

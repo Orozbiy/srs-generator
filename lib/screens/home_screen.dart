@@ -5,6 +5,7 @@ import '../models/doc_item.dart';
 import '../models/srs_config.dart';
 import '../models/handwriting_style.dart';
 import '../services/ai_service.dart';
+import '../services/doc_importer.dart';
 import '../services/document_reader.dart';
 import '../services/license_service.dart';
 import '../services/prefs_service.dart';
@@ -42,6 +43,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<DocItem>? _docItems; // документтин бөлүктөрү (белгилери менен)
   String? _docName;
+
+  /// Даяр документ AI'сиз (өз калыбында) колдонулабы.
+  String? _importedMd;
+  String? _importedTitle;
+  int _importedImgs = 0;
+  int _importedSkipped = 0;
+  bool _useAsIs = false;
 
   /// AI'га берилүүчү текст — документтен тандалган бөлүктөр гана.
   String? get _docText {
@@ -119,13 +127,24 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _readingDoc = true);
     try {
       final text = await DocumentReader.read(f.name, bytes);
+      ImportedDoc? imp;
+      try {
+        imp = await DocImporter.importFile(f.name, bytes);
+      } catch (_) {
+        imp = null;
+      }
       if (!mounted) return;
       setState(() {
         _docName = f.name;
         _docItems = DocItem.split(text);
+        _importedMd = imp?.markdown;
+        _importedTitle = imp?.title;
+        _importedImgs = imp?.images ?? 0;
+        _importedSkipped = imp?.skippedImages ?? 0;
+        _useAsIs = imp != null;
       });
-      // Документтин мазмунун көрсөтүп, тандатабыз.
-      await _editSelection();
+      // AI режиминде документтин мазмунун көрсөтүп, тандатабыз.
+      if (!_useAsIs) await _editSelection();
     } on DocumentReadException catch (e) {
       _snack(e.message);
     } catch (_) {
@@ -201,11 +220,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _generate() async {
+    final asIs = _useAsIs && _importedMd != null;
+    if (asIs && _topic.text.trim().isEmpty) {
+      _topic.text = (_importedTitle ?? _docName ?? 'СРС').trim();
+    }
     if (_topic.text.trim().isEmpty) {
       _snack('Тема киргизиңиз');
       return;
     }
-    if (!_ai.hasKey) {
+    if (!asIs && !_ai.hasKey) {
       _showMissingKey();
       return;
     }
@@ -227,7 +250,8 @@ class _HomeScreenState extends State<HomeScreen> {
       language: _language,
       pageCount: _pages,
       topic: _topic.text.trim(),
-      documentText: _docText,
+      documentText: asIs ? null : _docText,
+      asIs: asIs,
       withDiagrams: _withDiagrams,
       handwriting: _hand,
       handProfile: _hand == HandwritingStyle.mine ? _handProfile : null,
@@ -236,13 +260,16 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _busy = true);
     try {
       if (!mounted) return;
-      final content = await showDialog<String>(
-            // ignore: use_build_context_synchronously
-            context: context,
-            barrierDismissible: false,
-            builder: (_) => GenerationDialog(config: config, ai: _ai),
-          ) ??
-          '';
+      // Даяр документ: AI колдонулбайт, токен кетпейт
+      final content = asIs
+          ? _importedMd!
+          : (await showDialog<String>(
+                // ignore: use_build_context_synchronously
+                context: context,
+                barrierDismissible: false,
+                builder: (_) => GenerationDialog(config: config, ai: _ai),
+              ) ??
+              '');
       if (content.trim().isEmpty) return;
       if (!mounted) return;
 
@@ -430,6 +457,10 @@ class _HomeScreenState extends State<HomeScreen> {
               _diagramSwitch(),
               const SizedBox(height: 14),
               _docTile(),
+              if (_docItems != null && _importedMd != null) ...[
+                const SizedBox(height: 10),
+                _asIsSwitch(),
+              ],
               const SizedBox(height: 26),
               SizedBox(
                 height: 54,
@@ -569,6 +600,32 @@ class _HomeScreenState extends State<HomeScreen> {
         'СРС ушулар боюнча толукталат';
   }
 
+  Widget _asIsSwitch() {
+    final skipped =
+        _importedSkipped > 0 ? ' ($_importedSkipped сүрөт форматы колдоого алынбады)' : '';
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: _useAsIs ? AppTheme.primary : AppTheme.line,
+            width: _useAsIs ? 2 : 1),
+      ),
+      child: SwitchListTile(
+        value: _useAsIs,
+        onChanged: (v) => setState(() => _useAsIs = v),
+        title: const Text('Даяр файлды өз калыбында колдонуу',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+        subtitle: Text(
+            _useAsIs
+                ? 'AI колдонулбайт, токен кетпейт. Текст, формула, таблица '
+                    'жана $_importedImgs сүрөт өз ордунда калат$skipped.'
+                : 'Өчүк: документ AI үчүн булак катары колдонулат.',
+            style: const TextStyle(fontSize: 12, color: AppTheme.muted)),
+      ),
+    );
+  }
+
   Widget _docTile() {
     if (_docItems == null) {
       return InkWell(
@@ -641,6 +698,8 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () => setState(() {
               _docItems = null;
               _docName = null;
+              _importedMd = null;
+              _useAsIs = false;
             }),
           ),
         ],

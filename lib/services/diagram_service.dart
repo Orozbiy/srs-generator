@@ -96,6 +96,8 @@ class DiagramService {
       case DiagramKind.block:
         _drawBlocks(p, size, spec);
         break;
+      case DiagramKind.image:
+        break; // даяр сүрөт — бул жерде чийилбейт
     }
   }
 
@@ -115,6 +117,8 @@ class DiagramService {
         final n = spec.nodes.length;
         if (n == 0) return null;
         return Size(460, 50.0 + n * 86);
+      case DiagramKind.image:
+        return null;
     }
   }
 

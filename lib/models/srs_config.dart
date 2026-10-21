@@ -396,6 +396,9 @@ class SrsConfig {
   /// Сүрөт/схема кошулсунбу?
   final bool withDiagrams;
 
+  /// Даяр документ AI'сиз, өз калыбында колдонулабы (кыскартылбайт).
+  final bool asIs;
+
   const SrsConfig({
     required this.subject,
     required this.language,
@@ -403,6 +406,7 @@ class SrsConfig {
     required this.topic,
     this.documentText,
     this.withDiagrams = true,
+    this.asIs = false,
     this.handwriting,
     this.handProfile,
   });
@@ -415,6 +419,7 @@ class SrsConfig {
         'pageCount': pageCount.name,
         'topic': topic,
         'withDiagrams': withDiagrams,
+        if (asIs) 'asIs': true,
         'handwriting': handwriting?.id,
         if (handProfile != null) 'handProfile': handProfile,
       };
@@ -434,6 +439,7 @@ class SrsConfig {
         ),
         topic: (j['topic'] ?? '') as String,
         withDiagrams: (j['withDiagrams'] ?? true) as bool,
+        asIs: (j['asIs'] ?? false) as bool,
         handwriting: HandwritingStyle.fromId(j['handwriting'] as String?),
         handProfile: j['handProfile'] as String?,
       );
