@@ -96,7 +96,7 @@ class PageFitter {
               body = 220;
               break;
             case DiagramKind.block:
-              body = 400 * (50 + spec.nodes.length * 86) / 460;
+              body = math.min(270.0, 400 * (44 + spec.nodes.length * 64) / 520);
               break;
             case DiagramKind.image:
               body = 260;
@@ -108,6 +108,53 @@ class PageFitter {
       case BlockType.spacer:
         return 6;
     }
+  }
+
+  /// Сүрөт бетке батпай, мурунку бетти бош калтырбасын деп: сүрөттүн
+  /// алдына андан кийинки абзацтарды алып келет. Блоктордун жаңы тартибин
+  /// (эски индекстердин тизмеси) кайтарат. Аталыштардан аша албайт.
+  static List<int> reflowOrder(List<DocBlock> blocks, SrsConfig c) {
+    final n = blocks.length;
+    final used = List<bool>.filled(n, false);
+    final order = <int>[];
+    var y = 0.0; // учурдагы беттин ээленген бийиктиги
+
+    bool pullable(DocBlock b) =>
+        b.type == BlockType.paragraph ||
+        b.type == BlockType.bullet ||
+        b.type == BlockType.numbered ||
+        b.type == BlockType.spacer;
+
+    void place(int i) {
+      used[i] = true;
+      order.add(i);
+      final b = blocks[i];
+      final bh = blockHeight(b, c);
+      if (b.type == BlockType.diagram && y + bh > contentH) y = 0;
+      y += bh;
+      while (y > contentH) {
+        y -= contentH;
+      }
+    }
+
+    for (var i = 0; i < n; i++) {
+      if (used[i]) continue;
+      if (blocks[i].type == BlockType.diagram) {
+        final bh = blockHeight(blocks[i], c);
+        var j = i + 1;
+        while (y + bh > contentH && j < n) {
+          if (used[j]) {
+            j++;
+            continue;
+          }
+          if (!pullable(blocks[j])) break;
+          place(j);
+          j++;
+        }
+      }
+      place(i);
+    }
+    return order;
   }
 
   /// Титул бетин кошуп эсептелген болжолдуу барак саны.

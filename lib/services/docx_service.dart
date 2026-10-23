@@ -86,11 +86,15 @@ class DocxService {
           relId++;
           rels.writeln(
               '<Relationship Id="$id" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/$name"/>');
-          final widthCm = dim.$2 / dim.$1 > 1.4
-              ? (20.0 * dim.$1 / dim.$2).clamp(4.0, 14.0).toDouble()
-              : 14.0;
+          // Сүрөт бетти бош калтырбасын: бийиктиги 9.5 смден ашпасын
+          var widthCm = 14.0;
+          var heightCm = widthCm * dim.$2 / dim.$1;
+          if (heightCm > 9.5) {
+            heightCm = 9.5;
+            widthCm = heightCm * dim.$1 / dim.$2;
+          }
           final cx = (widthCm * _emuPerCm).round();
-          final cy = (widthCm * dim.$2 / dim.$1 * _emuPerCm).round();
+          final cy = (heightCm * _emuPerCm).round();
           body.write(_image(id, cx, cy, media.length));
           final caption = b.diagram?.caption ?? '';
           if (caption.isNotEmpty) {

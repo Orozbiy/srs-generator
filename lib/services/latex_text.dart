@@ -72,6 +72,15 @@ class LatexText {
           (m) => m[1]!);
     }
 
+    // \begin{pmatrix}...\end{pmatrix}, aligned, cases ж.б. — белгилерин алабыз
+    s = s.replaceAll(RegExp(r'\\(?:begin|end)\{[a-zA-Z*]+\}'), ' ');
+    s = s.replaceAll('&', ' ');
+    s = s.replaceAllMapped(RegExp(r'\\sum_\{([^{}]*)\}\^\{([^{}]*)\}'),
+        (m) => 'Σ(${m[1]}..${m[2]})');
+    s = s.replaceAllMapped(RegExp(r'\\xrightarrow(?:\[[^\]]*\])?\{([^{}]*)\}'),
+        (m) => ' —${m[1]}→ ');
+    s = s.replaceAll(RegExp(r'\^\{?\\circ\}?'), '°');
+
     s = powers(s);
 
     for (var i = 0; i < 5; i++) {
@@ -115,10 +124,16 @@ class LatexText {
         .replaceAll('**', '')
         .replaceAll('__', '')
         .replaceAll('`', '');
+    s = s.replaceAllMapped(RegExp(r'<sub>(.*?)</sub>'), (m) => _mapAll(m[1]!, _sub, ''));
+    s = s.replaceAllMapped(RegExp(r'<sup>(.*?)</sup>'), (m) => _mapAll(m[1]!, _sup, ''));
     s = s.replaceAllMapped(RegExp(r'\\\((.+?)\\\)'), (m) => f(m[1]!));
     s = s.replaceAllMapped(RegExp(r'\\\[(.+?)\\\]'), (m) => f(m[1]!));
     s = s.replaceAllMapped(RegExp(r'\$([^$]+)\$'), (m) => f(m[1]!));
     s = s.replaceAll(r'$', '');
+        // Модель $ белгисиз жазып койгон LaTeX калдыктарын да тазалайбыз
+    if (s.contains('\\') || s.contains('_{') || s.contains('^{')) {
+      s = toPlain(s);
+    }
     return s.trim();
   }
 }

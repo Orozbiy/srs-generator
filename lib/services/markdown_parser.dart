@@ -209,6 +209,10 @@ class MarkdownParser {
           j++;
         }
         i = j - 1;
+        // Жооп токен чегинен үзүлүп, акыркы сап жарым калса — аны таштайбыз
+        if (rows.length > 2 && rows.last.length < rows.first.length) {
+          rows.removeLast();
+        }
         if (rows.isNotEmpty) {
           out.add(DocBlock(BlockType.table, '', rows: rows));
           continue;
@@ -249,7 +253,8 @@ class MarkdownParser {
         final m = RegExp(r'^(\d+)[.)]\s+(.*)$').firstMatch(line)!;
         out.add(DocBlock(BlockType.numbered, inl(m.group(2)!),
             marker: '${m.group(1)}.'));
-      } else if (line.length > 4 &&
+            } else if (line.length > 4 &&
+          line.length < 100 &&
           line.startsWith('**') &&
           line.endsWith('**')) {
         addHeading(BlockType.h3, inl(line));

@@ -61,12 +61,19 @@ class LibraryService {
   /// Бир жолку чийүү: блокторго бөлүп, сүрөттөрдү, PDF жана Word жасайт.
   static Future<_Rendered> _renderOnce(SrsConfig config, AuthorInfo author,
       String content, void Function(String status)? onProgress) async {
-    final blocks = MarkdownParser.parse(content, lang: config.language);
+    var blocks = MarkdownParser.parse(content, lang: config.language);
     // Кол жазма режиминде PDF үчүн формулалар белгиленет (өзгөрүүсүз калышы үчүн)
-    final pdfBlocks = config.handwriting == null
+    var pdfBlocks = config.handwriting == null
         ? blocks
         : MarkdownParser.parse(content,
             markFormulas: true, lang: config.language);
+
+    // Сүрөт батпай калып бетти бош калтырбасын: абзацтарды алдыга алабыз
+    if (!config.asIs && pdfBlocks.length == blocks.length) {
+      final order = PageFitter.reflowOrder(blocks, config);
+      blocks = [for (final k in order) blocks[k]];
+      pdfBlocks = [for (final k in order) pdfBlocks[k]];
+    }
 
     onProgress?.call('Схема жана графиктер чийилип жатат...');
     final images = <int, Uint8List>{};

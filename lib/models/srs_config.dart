@@ -22,6 +22,7 @@ enum Subject {
   management,
   philosophy,
   intlRelations,
+  mechatronics,
 }
 
 enum Language { kyrgyz, russian, english }
@@ -67,6 +68,8 @@ extension SubjectExt on Subject {
         return '💭';
       case Subject.intlRelations:
         return '🌐';
+      case Subject.mechatronics:
+        return '🤖';
     }
   }
 
@@ -133,6 +136,12 @@ extension SubjectExt on Subject {
           'Международные отношения',
           'International Relations'
         );
+      case Subject.mechatronics:
+        return (
+          'Мехатроника жана робототехниканын негиздери',
+          'Основы мехатроники и робототехники',
+          'Fundamentals of Mechatronics and Robotics'
+        );
     }
   }
 
@@ -187,6 +196,8 @@ extension SubjectExt on Subject {
         return 'агымдардын жана түшүнүктөрдүн байланыш схемасы';
       case Subject.intlRelations:
         return 'мамлекеттердин байланыш схемасы, соода статистикасынын графиги';
+      case Subject.mechatronics:
+        return 'башкаруу системасынын блок-схемасы, датчик/мотор схемасы, өтүү процессинин графиги';
     }
   }
 
@@ -200,6 +211,7 @@ extension SubjectExt on Subject {
       case Subject.chemistry:
       case Subject.biology:
       case Subject.economics:
+      case Subject.mechatronics:
         return true;
       default:
         return false;
@@ -217,17 +229,20 @@ extension SubjectExt on Subject {
       case Subject.geography:
       case Subject.economics:
       case Subject.management:
+      case Subject.mechatronics:
         return true;
       default:
         return false;
     }
   }
 
-  bool get needsCircuits => this == Subject.electronics;
+  bool get needsCircuits =>
+      this == Subject.electronics || this == Subject.mechatronics;
 
   bool get needsBlockDiagram =>
       this == Subject.informatics ||
       this == Subject.management ||
+      this == Subject.mechatronics ||
       this == Subject.law;
 }
 

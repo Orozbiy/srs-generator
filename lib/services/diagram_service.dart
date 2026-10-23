@@ -116,7 +116,7 @@ class DiagramService {
       case DiagramKind.block:
         final n = spec.nodes.length;
         if (n == 0) return null;
-        return Size(460, 50.0 + n * 86);
+        return Size(520, 44.0 + n * 64);
       case DiagramKind.image:
         return null;
     }
@@ -616,12 +616,13 @@ class DiagramService {
 
     _title(p, size, spec.title);
 
-    const boxW = 240.0;
-    const boxH = 52.0;
-    final startY = spec.title.isNotEmpty ? 38.0 : 18.0;
+    const boxW = 300.0;
+    const boxH = 42.0;
+    const stepY = 64.0;
+    final startY = spec.title.isNotEmpty ? 34.0 : 10.0;
 
     for (var i = 0; i < nodes.length; i++) {
-      final cy = startY + i * 86 + boxH / 2;
+      final cy = startY + i * stepY + boxH / 2;
       final rect = Rect.fromCenter(
           center: Offset(size.width / 2, cy), width: boxW, height: boxH);
       final shape = i < shapes.length ? shapes[i] : '';
@@ -654,7 +655,7 @@ class DiagramService {
 
       if (i < nodes.length - 1) {
         final from = Offset(size.width / 2, rect.bottom + (isDecision ? 6 : 0));
-        final to = Offset(size.width / 2, rect.bottom + 34);
+        final to = Offset(size.width / 2, rect.bottom + (stepY - boxH));
         p.line(from, to, w: 1.2);
         _arrow(p, to, math.pi / 2);
       }

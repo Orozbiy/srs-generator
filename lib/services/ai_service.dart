@@ -332,7 +332,36 @@ shapes: start, process, decision, end. nodes 4-7 даана, ар бири 2-5 �
     return buf.toString();
   }
 
+  /// Предметке мүнөздүү кошумча талаптар (азырынча мехатроника үчүн).
+  String _subjectHint(SrsConfig c) {
+    if (c.subject != Subject.mechatronics) return '';
+    return '''
+ПРЕДМЕТТИН ТАЛАПТАРЫ (мехатроника жана робототехника — механика,
+электроника жана башкаруунун (программалоонун) биригиши):
+- Негизги түшүнүктөрдү так колдон: датчик (сенсор), аткаруучу механизм
+  (актуатор), микроконтроллер (мис. Arduino, STM32), артка байланыш,
+  ачык жана жабык контурлуу башкаруу, ПИД-регулятор, манипулятор,
+  эркиндик даражасы, түз жана тескери кинематика.
+- Терминдерди тандалган тилде жаз: орусча — датчик, исполнительный
+  механизм, обратная связь, ПИД-регулятор; англисче — sensor, actuator,
+  feedback, PID controller.
+- Реалдуу, белгилүү компоненттерди гана ата (мис. HC-SR04, SG90, L298N,
+  DC же кадамдуу (шаговый) кыймылдаткыч). Моделдердин мүнөздөмөсүн, сандарды ойлоп
+  чыкпа — так билбесең жалпы сүрөттөп жаз.
+- Өлчөө бирдиктери: СИ (В, А, Ом, Н·м, рад/с). Формула керек болсо
+  реалдууларын гана жаз: Ом мыйзамы, мотордун моменти, ПИД
+  u(t) = Kp·e(t) + Ki·∫e(t)dt + Kd·de(t)/dt.
+''';
+  }
+
   String _formulaRules(SrsConfig c) {
+    if (c.subject != Subject.physics &&
+        c.subject != Subject.electronics &&
+        c.subject != Subject.mechatronics &&
+        c.subject != Subject.math) {
+      return 'ФОРМУЛА: бул предметте математикалык формула жазба, ойдон '
+          'теңдеме чыгарба. Керек болсо жөнөкөй текст менен жаз (A + B → C).';
+    }
     return '''
 ФОРМУЛАЛАР: LaTeX форматта жаз. Өзүнчө сапта турган формуланы \$\$ ... \$\$
 ичине ал, сап ичиндегини \$ ... \$ ичине ал. Мисалы: \$\$I = \\frac{U}{R}\$\$
@@ -425,6 +454,7 @@ shapes: start, process, decision, end. nodes 4-7 даана, ар бири 2-5 �
 $count бөлүмдүн аталышын жаз.
 ${_langLine(config)}
 $doc
+${_subjectHint(config)}
 Биринчи бөлүм — киришүү, акыркы бөлүм — корутунду болсун.
 Жөн гана номерленген тизме бер, башка эч нерсе жазба.
 ''';
@@ -482,6 +512,7 @@ ${_langLine(config)}
 КӨЛӨМҮ: $words сөз (±15%). Мындан ашык жазба — ашыгы кесилип ташталат.
 Академиялык, илимий стилде, кайталоосуз.
 $doc
+${_subjectHint(config)}
 ${_formulaRules(config)}
 Керек болсо markdown таблица колдон (| бага | бага |).
 
@@ -562,6 +593,11 @@ ${_formulaRules(config)}
 
   Future<String?> _figureBlock(SrsConfig config, String sectionTitle,
       String text, int index, int total) async {
+    // Мехатроника: сүрөттү AI чийбейт — даяр жөнөкөй схемалар колдонулат
+    // (AIды кыйнабайт, ар дайым так жана тыкан чыгат).
+    if (config.subject == Subject.mechatronics) {
+      return _mechatronicsFigure(config, index);
+    }
     final body = text.length > 1800 ? text.substring(0, 1800) : text;
     final doc = config.documentText;
     var docPart = '';
@@ -605,6 +641,81 @@ ${_diagramFormats(config)}
       }
     }
     return null;
+  }
+
+  /// Мехатроника үчүн даяр жөнөкөй блок-схемалар (карандаш менен чийилет).
+  String _mechatronicsFigure(SrsConfig c, int index) {
+    String t(String ky, String ru, String en) {
+      switch (c.language) {
+        case Language.kyrgyz:
+          return ky;
+        case Language.russian:
+          return ru;
+        case Language.english:
+          return en;
+      }
+    }
+
+    final List<String> nodes;
+    final String title;
+    final String caption;
+    switch (index % 3) {
+      case 0:
+        title = t('Жабык контурлуу башкаруу', 'Замкнутый контур управления',
+            'Closed-loop control');
+        caption = t(
+            'Артка байланышы бар башкаруу системасынын схемасы',
+            'Схема системы управления с обратной связью',
+            'Feedback control system diagram');
+        nodes = [
+          t('Берилген маани', 'Заданное значение', 'Setpoint'),
+          t('ПИД-регулятор', 'ПИД-регулятор', 'PID controller'),
+          t('Кыймылдаткыч', 'Исполнительный механизм', 'Actuator'),
+          t('Объект (робот)', 'Объект (робот)', 'Plant (robot)'),
+          t('Датчик (артка байланыш)', 'Датчик (обратная связь)',
+              'Sensor (feedback)'),
+        ];
+        break;
+      case 1:
+        title = t('Роботтун түзүлүшү', 'Устройство робота',
+            'Robot structure');
+        caption = t('Роботтун негизги бөлүктөрүнүн байланышы',
+            'Связь основных частей робота', 'Main parts of a robot');
+        nodes = [
+          t('Датчиктер', 'Датчики', 'Sensors'),
+          t('Микроконтроллер', 'Микроконтроллер', 'Microcontroller'),
+          t('Драйвер', 'Драйвер', 'Driver'),
+          t('Мотор жана сервопривод', 'Мотор и сервопривод',
+              'Motor and servo'),
+          t('Механизм', 'Механизм', 'Mechanism'),
+        ];
+        break;
+      default:
+        title = t('Мехатрондук система', 'Мехатронная система',
+            'Mechatronic system');
+        caption = t('Мехатрониканын үч негизги бөлүгү',
+            'Три основные части мехатроники', 'Three parts of mechatronics');
+        nodes = [
+          t('Механика', 'Механика', 'Mechanics'),
+          t('Электроника', 'Электроника', 'Electronics'),
+          t('Башкаруу (программа)', 'Управление (программа)',
+              'Control (software)'),
+          t('Мехатрондук система', 'Мехатронная система',
+              'Mechatronic system'),
+        ];
+    }
+
+    final map = <String, dynamic>{
+      'title': title,
+      'caption': caption,
+      'nodes': nodes,
+      'shapes': [
+        'start',
+        for (var i = 1; i < nodes.length - 1; i++) 'process',
+        'end',
+      ],
+    };
+    return '```block\n${jsonEncode(map)}\n```';
   }
 
   /// Модель жообунан жарактуу сүрөт блогун алат (тастыктап).
@@ -697,8 +808,10 @@ ${_diagramFormats(config)}
   /// ГОСТ форматындагы адабияттар тизмеси.
   Future<String> generateReferences(SrsConfig config) async {
     final prompt = '''
-"${config.topic}" темасы (${config.subjectName}) боюнча 5-7 реалдуу
-илимий булакты ГОСТ 7.1 форматында тизмеле.
+"${config.topic}" темасы (${config.subjectName}) боюнча 5 булакты
+ГОСТ 7.1 форматында тизмеле. ЖАЛГАН булак жазба: жалпыга белгилүү,
+чындап бар окуу китептерин жана монографияларды гана ал. Так билбеген
+булакты жазба — азыраак жазсаң да болот.
 ${_langLine(config)}
 
 Формат так мындай болсун:

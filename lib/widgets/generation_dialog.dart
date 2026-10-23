@@ -67,6 +67,17 @@ class _GenerationDialogState extends State<GenerationDialog> {
     };
   }
 
+  String _refsTitle(Language l) {
+    switch (l) {
+      case Language.kyrgyz:
+        return 'Колдонулган адабияттар';
+      case Language.russian:
+        return 'Список литературы';
+      case Language.english:
+        return 'References';
+    }
+  }
+
   Future<void> _start() async {
     try {
       _set(() {
@@ -167,11 +178,11 @@ class _GenerationDialogState extends State<GenerationDialog> {
         try {
           final refs = await widget.ai.generateReferences(widget.config);
           if (_cancelled) return;
-          _content.writeln('\n## Колдонулган адабияттар\n');
+          _content.writeln('\n## ${_refsTitle(widget.config.language)}\n');
           _content.writeln(refs);
         } catch (e) {
           // Адабияттар алынбаса да СРС даяр — бирок билинип турсун
-          _content.writeln('\n## Колдонулган адабияттар\n');
+          _content.writeln('\n## ${_refsTitle(widget.config.language)}\n');
           _content.writeln(
               '_(Тизме алынбай калды: $e — "Текстти текшерүү" экранынан '
               'кол менен кошсоңуз болот.)_');

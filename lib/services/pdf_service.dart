@@ -462,7 +462,7 @@ class PdfService {
     final w = bd.getUint32(16);
     final h = bd.getUint32(20);
     if (w == 0 || h == 0) return 400;
-    return (480.0 * w / h).clamp(120.0, 400.0).toDouble();
+    return (270.0 * w / h).clamp(120.0, 400.0).toDouble();
   }
 
   static pw.Widget _block(DocBlock b, Uint8List? image, pw.Font bold,
