@@ -21,6 +21,30 @@ class PrefsService {
   static const _kLanguage = 'lastLanguage';
   static const _kPages = 'lastPages';
   static const _kDiagrams = 'withDiagrams';
+  static const _kTitlePage = 'withTitlePage';
+  static const _kCustomSubjects = 'customSubjects';
+  static const _kLastCustom = 'lastCustomSubject';
+
+  static Future<List<String>> customSubjects() async =>
+      (await SharedPreferences.getInstance())
+          .getStringList(_kCustomSubjects) ??
+      <String>[];
+
+  static Future<void> setCustomSubjects(List<String> v) async =>
+      (await SharedPreferences.getInstance())
+          .setStringList(_kCustomSubjects, v);
+
+  static Future<String> lastCustom() async =>
+      (await SharedPreferences.getInstance()).getString(_kLastCustom) ?? '';
+
+  static Future<void> setLastCustom(String v) async =>
+      (await SharedPreferences.getInstance()).setString(_kLastCustom, v);
+
+  static Future<bool> withTitlePage() async =>
+      (await SharedPreferences.getInstance()).getBool(_kTitlePage) ?? true;
+
+  static Future<void> setWithTitlePage(bool v) async =>
+      (await SharedPreferences.getInstance()).setBool(_kTitlePage, v);
 
   static Future<String> apiKey() async =>
       (await SharedPreferences.getInstance()).getString(_kApiKey) ?? '';

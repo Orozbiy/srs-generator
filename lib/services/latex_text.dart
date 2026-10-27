@@ -17,6 +17,7 @@ class LatexText {
     r'\Pi': 'Π', r'\rho': 'ρ', r'\sigma': 'σ', r'\Sigma': 'Σ', r'\tau': 'τ',
     r'\phi': 'φ', r'\Phi': 'Φ', r'\varphi': 'φ', r'\chi': 'χ', r'\psi': 'ψ',
     r'\Psi': 'Ψ', r'\degree': '°', r'\circ': '°',
+    r'\hbar': 'ħ', r'\ell': 'ℓ', r'\sim': '∼', r'\equiv': '≡',
   };
 
   static const Map<String, String> _sup = <String, String>{

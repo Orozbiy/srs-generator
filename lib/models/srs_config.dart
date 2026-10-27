@@ -23,6 +23,10 @@ enum Subject {
   philosophy,
   intlRelations,
   mechatronics,
+  microNano,
+
+  /// Колдонуучу өзү кошкон дисциплина (аты SrsConfig.customSubject'те).
+  custom,
 }
 
 enum Language { kyrgyz, russian, english }
@@ -70,6 +74,10 @@ extension SubjectExt on Subject {
         return '🌐';
       case Subject.mechatronics:
         return '🤖';
+      case Subject.microNano:
+        return '🔬';
+      case Subject.custom:
+        return '📚';
     }
   }
 
@@ -142,6 +150,14 @@ extension SubjectExt on Subject {
           'Основы мехатроники и робототехники',
           'Fundamentals of Mechatronics and Robotics'
         );
+      case Subject.microNano:
+        return (
+          'Микро жана наноэлектрониканын технологиясынын атайын маселелери',
+          'Специальные вопросы технологии микро- и наноэлектроники',
+          'Special Topics in Micro- and Nanoelectronics Technology'
+        );
+      case Subject.custom:
+        return ('Жаңы дисциплина', 'Новая дисциплина', 'New discipline');
     }
   }
 
@@ -198,6 +214,10 @@ extension SubjectExt on Subject {
         return 'мамлекеттердин байланыш схемасы, соода статистикасынын графиги';
       case Subject.mechatronics:
         return 'башкаруу системасынын блок-схемасы, датчик/мотор схемасы, өтүү процессинин графиги';
+      case Subject.microNano:
+        return 'технологиялык процесстин блок-схемасы, легирлөө профилинин графиги, өлчөмдүн кичирейиши менен параметрлердин өзгөрүшү';
+      case Subject.custom:
+        return 'түшүнүктөрдүн жана процесстин блок-схемасы';
     }
   }
 
@@ -212,6 +232,7 @@ extension SubjectExt on Subject {
       case Subject.biology:
       case Subject.economics:
       case Subject.mechatronics:
+      case Subject.microNano:
         return true;
       default:
         return false;
@@ -230,6 +251,7 @@ extension SubjectExt on Subject {
       case Subject.economics:
       case Subject.management:
       case Subject.mechatronics:
+      case Subject.microNano:
         return true;
       default:
         return false;
@@ -243,6 +265,8 @@ extension SubjectExt on Subject {
       this == Subject.informatics ||
       this == Subject.management ||
       this == Subject.mechatronics ||
+      this == Subject.microNano ||
+      this == Subject.custom ||
       this == Subject.law;
 }
 
@@ -408,8 +432,14 @@ class SrsConfig {
   /// null — негизги кол жазма.
   final String? handProfile;
 
+  /// Колдонуучу өзү кошкон дисциплинанын аты (subject == custom болгондо).
+  final String? customSubject;
+
   /// Сүрөт/схема кошулсунбу?
   final bool withDiagrams;
+
+  /// Титул барак кошулсунбу?
+  final bool withTitlePage;
 
   /// Даяр документ AI'сиз, өз калыбында колдонулабы (кыскартылбайт).
   final bool asIs;
@@ -421,12 +451,18 @@ class SrsConfig {
     required this.topic,
     this.documentText,
     this.withDiagrams = true,
+    this.withTitlePage = true,
+    this.customSubject,
     this.asIs = false,
     this.handwriting,
     this.handProfile,
   });
 
-  String get subjectName => subject.nameIn(language);
+  String get subjectName {
+    final c = customSubject?.trim() ?? '';
+    if (subject == Subject.custom && c.isNotEmpty) return c;
+    return subject.nameIn(language);
+  }
 
   Map<String, dynamic> toJson() => {
         'subject': subject.name,
@@ -434,6 +470,8 @@ class SrsConfig {
         'pageCount': pageCount.name,
         'topic': topic,
         'withDiagrams': withDiagrams,
+        'withTitlePage': withTitlePage,
+        if (customSubject != null) 'customSubject': customSubject,
         if (asIs) 'asIs': true,
         'handwriting': handwriting?.id,
         if (handProfile != null) 'handProfile': handProfile,
@@ -454,6 +492,8 @@ class SrsConfig {
         ),
         topic: (j['topic'] ?? '') as String,
         withDiagrams: (j['withDiagrams'] ?? true) as bool,
+        withTitlePage: (j['withTitlePage'] ?? true) as bool,
+        customSubject: j['customSubject'] as String?,
         asIs: (j['asIs'] ?? false) as bool,
         handwriting: HandwritingStyle.fromId(j['handwriting'] as String?),
         handProfile: j['handProfile'] as String?,

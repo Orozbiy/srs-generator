@@ -222,9 +222,16 @@ class DiagramService {
   static void _drawChart(_Pc p, Size size, DiagramSpec spec) {
     final c = p.c;
     final series = spec.series;
-    const left = 58.0;
+    // Y огунун жазуусу сандар менен кабышпасын деп сол жээкти кеңейтебиз
+    final left = spec.yLabel.isNotEmpty ? 84.0 : 58.0;
     const right = 16.0;
-    const top = 34.0;
+    // Аталыш 2 сапка чыгып калса, график төмөн жылат
+    final titleH = spec.title.isEmpty
+        ? 0.0
+        : _painter(spec.title,
+                size: 13.5, maxWidth: size.width - 20, align: TextAlign.center)
+            .height;
+    final top = math.max(34.0, 6 + titleH + 12);
     const bottom = 52.0;
 
     final plot = Rect.fromLTRB(
@@ -321,11 +328,15 @@ class DiagramService {
     _arrow(p, Offset(plot.right + 8, plot.bottom), 0);
 
     if (spec.xLabel.isNotEmpty) {
-      _text(c, spec.xLabel, Offset(plot.right, plot.bottom + 22),
-          size: 10, centerX: true, maxWidth: 160, align: TextAlign.center);
+      _text(c, spec.xLabel,
+          Offset(plot.left + plot.width / 2, plot.bottom + 22),
+          size: 10,
+          centerX: true,
+          maxWidth: plot.width,
+          align: TextAlign.center);
     }
     if (spec.yLabel.isNotEmpty) {
-      _rotatedText(c, spec.yLabel, Offset(14, plot.top + plot.height / 2),
+      _rotatedText(c, spec.yLabel, Offset(8, plot.top + plot.height / 2),
           size: 10);
     }
 
@@ -793,6 +804,77 @@ class _HandTxt implements _Txt {
   }
 }
 
+/// Аралаш жазуунун бир кесими: кол жазма сап (сүрөт) же шрифт.
+class _MixPiece {
+  final _Line? hand;
+  final TextPainter? font;
+  final double w;
+  final double h;
+
+  /// Жогорудан жазуу сызыгына чейинки аралык.
+  final double base;
+
+  /// Индекс үчүн жылдыруу (+ ылдый, − өйдө).
+  final double dy;
+  _MixPiece(this.hand, this.font, this.w, this.h, this.base, this.dy);
+}
+
+class _MixPlaced {
+  final _MixPiece piece;
+  final double x;
+  final double top;
+  _MixPlaced(this.piece, this.x, this.top);
+}
+
+class _MixLine {
+  final List<_MixPlaced> items;
+  final double width;
+  final double height;
+  _MixLine(this.items, this.width, this.height);
+}
+
+/// Бир сапта кол жазма жана шрифт кесимдери аралаш жазылган жазуу.
+class _MixTxt implements _Txt {
+  final List<_MixLine> lines;
+  final TextAlign align;
+  _MixTxt(this.lines, this.align);
+  @override
+  double get width => lines.fold(0.0, (m, l) => math.max(m, l.width));
+  @override
+  double get height => lines.fold(0.0, (s, l) => s + l.height);
+  @override
+  void paint(Canvas c, Offset at) {
+    final full = width;
+    var y = at.dy;
+    final paint = Paint()..filterQuality = FilterQuality.high;
+    for (final l in lines) {
+      final dx = align == TextAlign.center
+          ? (full - l.width) / 2
+          : align == TextAlign.right
+              ? full - l.width
+              : 0.0;
+      for (final it in l.items) {
+        final pc = it.piece;
+        final ox = at.dx + dx + it.x;
+        final oy = y + it.top;
+        final img = pc.hand?.image;
+        final tp = pc.font;
+        if (img != null) {
+          c.drawImageRect(
+            img,
+            Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+            Rect.fromLTWH(ox, oy, pc.w, pc.h),
+            paint,
+          );
+        } else if (tp != null) {
+          tp.paint(c, Offset(ox, oy));
+        }
+      }
+      y += l.height;
+    }
+  }
+}
+
 /// Диаграммадагы жазууларды кайсы кол жазма менен жазууну чечет.
 ///  - кол жазма жок: карандаш менен жазгандай шрифт (графит түс);
 ///  - даяр кол жазма шрифти: ошол шрифт, ручканын көк сыясы;
@@ -835,8 +917,14 @@ class _Writer {
 
   _Txt layout(String text, double size, double maxWidth, TextAlign align) {
     final hw = mine;
-    if (hw == null || text.trim().isEmpty || !HwRender.canWrite(hw, text)) {
+    if (hw == null || text.trim().isEmpty) {
       return _font(text, size, maxWidth, align);
+    }
+    // Кол жазмада жок белги (_, *, π, ħ ...) бар болсо, бүт жазууну шрифтке
+    // которбойбуз: жок белгини гана шрифт менен, калганын өз кол жазма менен
+    // жазабыз. `_n` — астыңкы, `^2` — үстүңкү индекс.
+    if (!HwRender.canWrite(hw, text)) {
+      return _mix(hw, text, size, maxWidth, align);
     }
     final key = '${size.toStringAsFixed(2)}|${maxWidth.round()}|$text';
     if (collecting) {
@@ -854,6 +942,178 @@ class _Writer {
     final ready = _ready[key];
     if (ready == null) return _font(text, size, maxWidth, align);
     return _HandTxt(ready, align);
+  }
+
+  static const double _subMul = 0.62;
+
+  /// Текстти (текст, масштаб, жылдыруу) бөлүктөрүнө бөлөт.
+  /// `_x`, `_{..}` — астыңкы индекс; `^x`, `^{..}` — үстүңкү индекс.
+  /// Боштук `null` текст менен белгиленет.
+  List<(String?, double, double)> _atoms(String text) {
+    final cs = text.runes.map(String.fromCharCode).toList();
+    final out = <(String?, double, double)>[];
+    final buf = StringBuffer();
+    void flush() {
+      if (buf.isNotEmpty) {
+        out.add((buf.toString(), 1.0, 0.0));
+        buf.clear();
+      }
+    }
+
+    var i = 0;
+    while (i < cs.length) {
+      final ch = cs[i];
+      if (ch.trim().isEmpty) {
+        flush();
+        if (out.isNotEmpty && out.last.$1 != null) out.add((null, 1.0, 0.0));
+        i++;
+        continue;
+      }
+      if ((ch == '_' || ch == '^') &&
+          i > 0 &&
+          cs[i - 1].trim().isNotEmpty &&
+          i + 1 < cs.length &&
+          cs[i + 1].trim().isNotEmpty) {
+        flush();
+        final up = ch == '^';
+        var j = i + 1;
+        String sub;
+        if (cs[j] == '{') {
+          final end = cs.indexOf('}', j);
+          if (end > j + 1) {
+            sub = cs.sublist(j + 1, end).join();
+            j = end + 1;
+          } else {
+            sub = cs[j];
+            j++;
+          }
+        } else {
+          sub = cs[j];
+          j++;
+        }
+        out.add((sub, _subMul, up ? -0.42 : 0.20));
+        i = j;
+        continue;
+      }
+      buf.write(ch);
+      i++;
+    }
+    flush();
+    return out;
+  }
+
+  /// Бир бөлүктү өз кол жазма менен жазат (сап сүрөтү). Болбосо null.
+  _MixPiece? _handPiece(MyHandwriting hw, String run, double size, double dy) {
+    final key = 'm|${size.toStringAsFixed(2)}|$run';
+    List<_Line>? ready;
+    if (collecting) {
+      final lines = _pending[key] ??= HwRender.renderParagraph(
+        hw,
+        run,
+        sizePt: size * 1.2,
+        availPt: run.length * size * 1.3 + 40,
+        lineHeight: 1.3,
+        seed: run.hashCode,
+      );
+      if (lines.isEmpty) return null;
+      final l = lines.first;
+      ready = [_Line(null, l.widthPt, l.heightPt)];
+    } else {
+      ready = _ready[key];
+    }
+    if (ready == null || ready.isEmpty) return null;
+    final l = ready.first;
+    return _MixPiece(l, null, l.w, l.h, l.h * 0.70, dy);
+  }
+
+  /// Кол жазмада жок белги үчүн: кол жазма шрифти, ошол эле көк сыя.
+  _MixPiece _fontPiece(String run, double size, double dy) {
+    const st = HandwritingStyle.marckKg;
+    final tp = TextPainter(
+      text: TextSpan(
+        text: run,
+        style: TextStyle(
+          color: _penInk,
+          fontFamily: st.family,
+          fontSize: size * st.scale * 1.12,
+          fontWeight: FontWeight.w400,
+          height: 1.2,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final base = tp.computeDistanceToActualBaseline(TextBaseline.alphabetic);
+    return _MixPiece(null, tp, tp.width, tp.height, base, dy);
+  }
+
+  /// Аралаш жазуу: жазылса боло турган бөлүк — өз кол жазма, жок белгилер —
+  /// шрифт. Сөздөр орун жетпесе кийинки сапка өтөт.
+  _Txt _mix(MyHandwriting hw, String text, double size, double maxWidth,
+      TextAlign align) {
+    final words = <List<_MixPiece>>[];
+    var cur = <_MixPiece>[];
+    for (final a in _atoms(text)) {
+      final t = a.$1;
+      if (t == null) {
+        if (cur.isNotEmpty) {
+          words.add(cur);
+          cur = <_MixPiece>[];
+        }
+        continue;
+      }
+      final sz = size * a.$2;
+      final dy = a.$3 * size;
+      final runs = <(String, bool)>[];
+      for (final ch in t.runes.map(String.fromCharCode)) {
+        final ok = ch.trim().isEmpty || HwRender.canWrite(hw, ch);
+        if (runs.isNotEmpty && runs.last.$2 == ok) {
+          runs[runs.length - 1] = (runs.last.$1 + ch, ok);
+        } else {
+          runs.add((ch, ok));
+        }
+      }
+      for (final r in runs) {
+        _MixPiece? piece;
+        if (r.$2) piece = _handPiece(hw, r.$1, sz, dy);
+        cur.add(piece ?? _fontPiece(r.$1, sz, dy));
+      }
+    }
+    if (cur.isNotEmpty) words.add(cur);
+
+    final space = size * 0.47;
+    final lines = <_MixLine>[];
+    var items = <(_MixPiece, double)>[];
+    var x = 0.0;
+    void endLine() {
+      if (items.isEmpty) return;
+      var base = 0.0;
+      for (final it in items) {
+        base = math.max(base, it.$1.base - it.$1.dy);
+      }
+      var h = 0.0;
+      final placed = <_MixPlaced>[];
+      for (final it in items) {
+        final top = base - it.$1.base + it.$1.dy;
+        placed.add(_MixPlaced(it.$1, it.$2, top));
+        h = math.max(h, top + it.$1.h);
+      }
+      lines.add(_MixLine(placed, x, h));
+      items = <(_MixPiece, double)>[];
+      x = 0.0;
+    }
+
+    for (final w in words) {
+      final ww = w.fold(0.0, (s, pc) => s + pc.w);
+      if (items.isNotEmpty && x + space + ww > maxWidth) endLine();
+      if (items.isNotEmpty) x += space;
+      for (final pc in w) {
+        items.add((pc, x));
+        x += pc.w;
+      }
+    }
+    endLine();
+    if (lines.isEmpty) return _font(text, size, maxWidth, align);
+    return _MixTxt(lines, align);
   }
 
   /// Чогултулган кол жазма саптарын ui.Image'ге айландырат.

@@ -33,6 +33,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Language _language = Language.kyrgyz;
   PageCount _pages = PageCount.ten;
   bool _withDiagrams = true;
+  bool _withTitlePage = true;
+  List<String> _customSubjects = <String>[];
+  String _customName = '';
   bool _busy = false;
   bool _readingDoc = false;
   HandwritingStyle? _hand; // null — кадимки жазуу
@@ -70,10 +73,25 @@ class _HomeScreenState extends State<HomeScreen> {
     final key = await PrefsService.apiKey();
     final author = await PrefsService.author();
     final (s, l, p, d) = await PrefsService.lastChoice();
+    final titlePage = await PrefsService.withTitlePage();
+    final customs = await PrefsService.customSubjects();
+    final lastCustom = await PrefsService.lastCustom();
+    var subj = s;
+    var cname = '';
+    if (s == Subject.custom) {
+      if (customs.contains(lastCustom)) {
+        cname = lastCustom;
+      } else {
+        subj = Subject.physics;
+      }
+    }
     if (!mounted) return;
     setState(() {
+      _customSubjects = customs;
+      _customName = cname;
+      _withTitlePage = titlePage;
       _author = author;
-      _subject = s;
+      _subject = subj;
       _language = l;
       _pages = p;
       _withDiagrams = d;
@@ -244,6 +262,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
     await PrefsService.setLastChoice(
         _subject, _language, _pages, _withDiagrams);
+    await PrefsService.setWithTitlePage(_withTitlePage);
+    if (_subject == Subject.custom) {
+      await PrefsService.setLastCustom(_customName);
+    }
 
     final config = SrsConfig(
       subject: _subject,
@@ -253,6 +275,8 @@ class _HomeScreenState extends State<HomeScreen> {
       documentText: asIs ? null : _docText,
       asIs: asIs,
       withDiagrams: _withDiagrams,
+      withTitlePage: _withTitlePage,
+      customSubject: _subject == Subject.custom ? _customName : null,
       handwriting: _hand,
       handProfile: _hand == HandwritingStyle.mine ? _handProfile : null,
     );
@@ -367,16 +391,35 @@ class _HomeScreenState extends State<HomeScreen> {
               _hero(),
               const SizedBox(height: 22),
               const SectionLabel(Icons.menu_book_outlined, 'Предмет'),
-              _grid(
-                Subject.values
-                    .map((s) => OptionCard(
-                          glyph: s.icon,
-                          title: s.nameIn(_language),
-                          selected: _subject == s,
-                          onTap: () => setState(() => _subject = s),
-                        ))
-                    .toList(),
-              ),
+              _grid([
+                for (final s in Subject.values)
+                  if (s != Subject.custom)
+                    OptionCard(
+                      glyph: s.icon,
+                      title: s.nameIn(_language),
+                      selected: _subject == s,
+                      onTap: () => setState(() => _subject = s),
+                    ),
+                for (final n in _customSubjects)
+                  OptionCard(
+                    glyph: Subject.custom.icon,
+                    title: n,
+                    subtitle: 'өчүрүү: узак басыңыз',
+                    selected: _subject == Subject.custom && _customName == n,
+                    onTap: () => setState(() {
+                      _subject = Subject.custom;
+                      _customName = n;
+                    }),
+                    onLongPress: () => _deleteCustomSubject(n),
+                  ),
+                OptionCard(
+                  glyph: '＋',
+                  title: 'Жаңы дисциплина кошуу',
+                  selected: false,
+                  color: AppTheme.accent,
+                  onTap: _addCustomSubject,
+                ),
+              ]),
               const SizedBox(height: 22),
               const SectionLabel(Icons.translate_outlined, 'Тил'),
               _grid(
@@ -455,6 +498,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 18),
               _diagramSwitch(),
+              const SizedBox(height: 14),
+              _titleSwitch(),
               const SizedBox(height: 14),
               _docTile(),
               if (_docItems != null && _importedMd != null) ...[
@@ -545,6 +590,118 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             child: const Icon(Icons.school_outlined,
                 color: Colors.white, size: 32),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addCustomSubject() async {
+    final ctrl = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Жаңы дисциплина'),
+        content: SizedBox(
+          width: 420,
+          child: TextField(
+            controller: ctrl,
+            autofocus: true,
+            maxLength: 100,
+            decoration: const InputDecoration(
+              hintText: 'Дисциплинанын толук аталышы',
+            ),
+            onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Жокко чыгаруу'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Кошуу'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty || !mounted) return;
+    final list = [..._customSubjects];
+    if (!list.contains(name)) list.add(name);
+    await PrefsService.setCustomSubjects(list);
+    if (!mounted) return;
+    setState(() {
+      _customSubjects = list;
+      _subject = Subject.custom;
+      _customName = name;
+    });
+    _snack('«$name» дисциплинасы кошулду');
+  }
+
+  Future<void> _deleteCustomSubject(String name) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Дисциплинаны өчүрүү'),
+        content: Text('«$name» тизмеден өчүрүлсүнбү? Мурун жасалган СРСтерге тийбейт.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Жок'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Өчүрүү'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final list = _customSubjects.where((e) => e != name).toList();
+    await PrefsService.setCustomSubjects(list);
+    if (!mounted) return;
+    setState(() {
+      _customSubjects = list;
+      if (_subject == Subject.custom && _customName == name) {
+        _subject = Subject.physics;
+        _customName = '';
+      }
+    });
+  }
+
+  Widget _titleSwitch() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.line),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.article_outlined, color: AppTheme.primary),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Титул барагын кошуу',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Өчүрсөңүз, СРС түз мазмундан башталат',
+                  style: TextStyle(fontSize: 12, color: AppTheme.muted),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Switch(
+            value: _withTitlePage,
+            onChanged: (v) => setState(() => _withTitlePage = v),
           ),
         ],
       ),

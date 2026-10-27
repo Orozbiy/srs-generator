@@ -11,11 +11,15 @@ class OptionCard extends StatelessWidget {
   final Color color;
   final VoidCallback onTap;
 
+  /// Узак басуу же оң баскыч (мис. картаны өчүрүү үчүн).
+  final VoidCallback? onLongPress;
+
   const OptionCard({
     super.key,
     required this.title,
     required this.selected,
     required this.onTap,
+    this.onLongPress,
     this.subtitle,
     this.glyph,
     this.color = AppTheme.primary,
@@ -27,6 +31,8 @@ class OptionCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
+        onSecondaryTap: onLongPress,
         borderRadius: BorderRadius.circular(16),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),

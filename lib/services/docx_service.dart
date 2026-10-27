@@ -38,8 +38,10 @@ class DocxService {
         '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>');
 
     // ----------------------------------------------------------- титул бет
-    body.write(_titlePage(config, author, dateStr));
-    body.write(_pageBreak());
+    if (config.withTitlePage) {
+      body.write(_titlePage(config, author, dateStr));
+      body.write(_pageBreak());
+    }
 
     // --------------------------------------------------------------- мазмун
     for (var i = 0; i < blocks.length; i++) {

@@ -84,20 +84,31 @@ class PdfService {
       20 * PdfPageFormat.mm,
     );
 
-    pdf.addPage(
-      pw.Page(
-        pageFormat: pageFormat,
-        margin: margin,
-        build: (ctx) => _titlePage(
-          config: config,
-          author: author,
-          dateStr: dateStr,
-          bold: bold,
-          regular: regular,
-          italic: italic,
+    if (config.withTitlePage) {
+      // Шрифттик кол жазмада титул барак да ошол кол жазма менен чыгат
+      final hf = (hw != null && hw.mine == null) ? hw.font : null;
+      pdf.addPage(
+        pw.Page(
+          pageFormat: pageFormat,
+          margin: margin,
+          build: (ctx) {
+            final page = _titlePage(
+              config: config,
+              author: author,
+              dateStr: dateStr,
+              bold: hf ?? bold,
+              regular: hf ?? regular,
+              italic: hf ?? italic,
+            );
+            if (hf == null) return page;
+            return pw.DefaultTextStyle(
+              style: pw.TextStyle(color: _ink, fontFallback: [regular]),
+              child: page,
+            );
+          },
         ),
-      ),
-    );
+      );
+    }
 
     pdf.addPage(
       pw.MultiPage(
