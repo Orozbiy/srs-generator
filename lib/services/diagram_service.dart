@@ -108,15 +108,29 @@ class DiagramService {
         return const Size(540, 340);
       case DiagramKind.circuit:
         if (spec.elements.isEmpty) return null;
-        final rows = spec.circuitLayout.startsWith('par')
-            ? spec.elements.length
-            : 1;
+        final n = spec.elements.length;
+        final parallel = spec.circuitLayout.startsWith('par');
         final extra = spec.title.isNotEmpty ? 26.0 : 0.0;
-        return Size(540, 150.0 + extra + rows * 55);
+        if (parallel) {
+          // Ар бир бутакка label + символ батчу бийиктик.
+          return Size(540, 120.0 + extra + n * 62);
+        }
+        // Сериялык: элемент көбөйсө туурасын кеңейтебиз, болбосо
+        // символдор менен label бири-бирине жабышат.
+        final width = math.max(540.0, 120.0 + n * 92.0);
+        return Size(width, 210.0 + extra);
       case DiagramKind.block:
         final n = spec.nodes.length;
         if (n == 0) return null;
-        return Size(520, 44.0 + n * 64);
+        // Эң узун node текстине жараша кенендикти тандайбыз.
+        var maxLen = 0;
+        for (final t in spec.nodes) {
+          if (t.length > maxLen) maxLen = t.length;
+        }
+        final width = maxLen > 36 ? 580.0 : 520.0;
+        // Аталыш узун болсо эки сапка чыгат — бийиктикке кошумча орун.
+        final titleExtra = spec.title.length > 40 ? 20.0 : 0.0;
+        return Size(width, 54.0 + titleExtra + n * 64);
       case DiagramKind.image:
         return null;
     }
@@ -511,7 +525,8 @@ class DiagramService {
       for (var i = 0; i < elements.length; i++) {
         final centre = x + span / 2;
         p.line(Offset(x, rect.top), Offset(centre - 21, rect.top));
-        _element(p, elements[i], Offset(centre, rect.top));
+        _element(p, elements[i], Offset(centre, rect.top),
+            maxLabelWidth: span - 8);
         p.line(Offset(centre + 21, rect.top), Offset(x + span, rect.top));
         x += span;
       }
@@ -538,7 +553,8 @@ class DiagramService {
         final y = rect.top + step * (i + 0.5);
         final centre = (branchLeft + branchRight) / 2;
         p.line(Offset(branchLeft, y), Offset(centre - 21, y));
-        _element(p, elements[i], Offset(centre, y));
+        _element(p, elements[i], Offset(centre, y),
+            maxLabelWidth: branchRight - branchLeft - 8);
         p.line(Offset(centre + 21, y), Offset(branchRight, y));
       }
     }
@@ -554,7 +570,8 @@ class DiagramService {
     p.line(at + const Offset(0, 10), at + const Offset(0, 16));
   }
 
-  static void _element(_Pc p, CircuitElement el, Offset centre) {
+  static void _element(_Pc p, CircuitElement el, Offset centre,
+      {double maxLabelWidth = 110}) {
     final kind = el.kind.isEmpty ? 'R' : el.kind[0].toUpperCase();
     switch (kind) {
       case 'C': // конденсатор
@@ -616,7 +633,10 @@ class DiagramService {
 
     if (el.label.isNotEmpty) {
       _text(p.c, el.label, centre + const Offset(0, -27),
-          size: 10, centerX: true, maxWidth: 110, align: TextAlign.center);
+          size: 10,
+          centerX: true,
+          maxWidth: math.max(60, maxLabelWidth),
+          align: TextAlign.center);
     }
   }
 
@@ -627,10 +647,20 @@ class DiagramService {
 
     _title(p, size, spec.title);
 
-    const boxW = 300.0;
+    final boxW = size.width - 120;
     const boxH = 42.0;
     const stepY = 64.0;
-    final startY = spec.title.isNotEmpty ? 34.0 : 10.0;
+    // Аталыш эки сапка чыкса, биринчи кутуча анын үстүнө кирип калбасын деп
+    // аталыштын чыныгы бийиктигине жараша баштайбыз.
+    final startY = spec.title.isEmpty
+        ? 10.0
+        : 6 +
+            _painter(spec.title,
+                    size: 13.5,
+                    maxWidth: size.width - 20,
+                    align: TextAlign.center)
+                .height +
+            14;
 
     for (var i = 0; i < nodes.length; i++) {
       final cy = startY + i * stepY + boxH / 2;
@@ -644,12 +674,15 @@ class DiagramService {
           i == nodes.length - 1;
       final isDecision = shape.startsWith('dec') || shape.startsWith('if');
 
+      // Ромб текстти толук камтышы үчүн кадимкиден кенен жана бийик болот.
+      final dw = isDecision ? rect.width / 2 + 24 : 0.0;
+      final dh = isDecision ? rect.height / 2 + 10 : 0.0;
       if (isDecision) {
         p.poly([
-          Offset(rect.center.dx, rect.top - 6),
-          Offset(rect.right, rect.center.dy),
-          Offset(rect.center.dx, rect.bottom + 6),
-          Offset(rect.left, rect.center.dy),
+          Offset(rect.center.dx, rect.center.dy - dh),
+          Offset(rect.center.dx + dw, rect.center.dy),
+          Offset(rect.center.dx, rect.center.dy + dh),
+          Offset(rect.center.dx - dw, rect.center.dy),
         ], closed: true, w: 1.2);
       } else if (isTerminal) {
         p.rrect(rect, boxH / 2, w: 1.2);
@@ -661,11 +694,12 @@ class DiagramService {
           size: 10.5,
           centerX: true,
           centerY: true,
-          maxWidth: boxW - 26,
+          maxWidth: isDecision ? rect.width - 48 : boxW - 26,
           align: TextAlign.center);
 
       if (i < nodes.length - 1) {
-        final from = Offset(size.width / 2, rect.bottom + (isDecision ? 6 : 0));
+        final from = Offset(
+            size.width / 2, isDecision ? rect.center.dy + dh : rect.bottom);
         final to = Offset(size.width / 2, rect.bottom + (stepY - boxH));
         p.line(from, to, w: 1.2);
         _arrow(p, to, math.pi / 2);

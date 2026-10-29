@@ -187,11 +187,20 @@ class MarkdownParser {
       if (isOpenMath(line)) {
         final buf = <String>[];
         var j = i + 1;
-        while (j < raw.length && !isCloseMath(raw[j].trim())) {
+        var closed = false;
+        // Формула көп дегенде 12 сап болот. Жабылбай калган жалгыз \$\$
+        // бүт текстти бир формула кылып жутуп, PDFте "Widget won't fit
+        // into the page" катасын берет — андыктан андай белги ташталат.
+        while (j < raw.length && j - i <= 12) {
+          if (isCloseMath(raw[j].trim())) {
+            closed = true;
+            break;
+          }
           final t = raw[j].trim();
           if (t.isNotEmpty) buf.add(t);
           j++;
         }
+        if (!closed) continue;
         i = j;
         if (buf.isNotEmpty) {
           out.add(DocBlock(BlockType.formula, LatexText.toPlain(buf.join(' '))));

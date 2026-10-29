@@ -6,12 +6,14 @@ import 'package:intl/intl.dart';
 import 'package:open_file/open_file.dart';
 import 'package:printing/printing.dart';
 
+import '../models/handwriting_style.dart';
 import '../models/srs_config.dart';
 import '../models/srs_record.dart';
 import '../services/library_service.dart';
 import '../services/prefs_service.dart';
 import '../theme/app_theme.dart';
 import 'editor_screen.dart';
+import 'handwriting_screen.dart';
 
 class ResultScreen extends StatefulWidget {
   final SrsRecord record;
@@ -25,6 +27,69 @@ class ResultScreen extends StatefulWidget {
 class _ResultScreenState extends State<ResultScreen> {
   late SrsRecord record = widget.record;
   int _version = 0; // PDF алдын-ала көрүүнү жаңыртуу үчүн
+  bool _busy = false;
+  String _status = '';
+
+  /// СРС жазылып бүткөндөн кийин кол жазманы башкасына алмаштырат.
+  Future<void> _changeHand(BuildContext context) async {
+    final cur = record.config;
+    final picked = await Navigator.push<HandChoice>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => HandwritingScreen(
+          selected: cur.handwriting,
+          selectedProfile: cur.handProfile,
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+
+    final content = await LibraryService.readContent(record);
+    if (!mounted) return;
+    if (content == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('СРСтин тексти табылган жок.')),
+      );
+      return;
+    }
+    final author = await PrefsService.author();
+    if (!mounted) return;
+
+    setState(() {
+      _busy = true;
+      _status = 'Кол жазма алмаштырылууда...';
+    });
+    try {
+      final cfg = cur.withHand(
+        picked.style,
+        picked.style == HandwritingStyle.mine ? picked.profileId : null,
+      );
+      final updated = await LibraryService.update(
+        record: record,
+        author: author,
+        content: content,
+        config: cfg,
+        onProgress: (s) {
+          if (mounted) setState(() => _status = s);
+        },
+      );
+      if (!mounted) return;
+      setState(() {
+        record = updated;
+        _version++;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Кол жазма өзгөртүлдү: ${picked.label}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Алмаштыруу мүмкүн болгон жок: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   Future<void> _edit(BuildContext context) async {
     final content = await LibraryService.readContent(record);
@@ -99,7 +164,8 @@ class _ResultScreenState extends State<ResultScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: Column(
+      body: Stack(children: [
+        Column(
         children: [
           Container(
             width: double.infinity,
@@ -137,6 +203,15 @@ class _ResultScreenState extends State<ResultScreen> {
                     label: 'Өзгөртүү',
                     color: AppTheme.accent,
                     onTap: () => _edit(context),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _action(
+                    icon: Icons.draw_outlined,
+                    label: 'Кол жазманы өзгөртүү',
+                    color: AppTheme.primary,
+                    onTap: _busy ? () {} : () => _changeHand(context),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -207,7 +282,28 @@ class _ResultScreenState extends State<ResultScreen> {
             ),
           ),
         ],
-      ),
+        ),
+        if (_busy)
+          Positioned.fill(
+            child: Container(
+              color: Colors.black45,
+              alignment: Alignment.center,
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 16),
+                      Text(_status),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ]),
     );
   }
 

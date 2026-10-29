@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 
 import '../models/diagram_spec.dart';
 import '../models/doc_item.dart';
@@ -43,6 +45,23 @@ class AiService {
   }
 
   bool get hasKey => _activeKey.isNotEmpty;
+
+  // ============ УБАКТЫЛУУ DEBUG: диаграмма логу ============
+  // Колдонмонун документтер папкасына srs_diagram_log.txt деп жазат.
+  // Windows'то: C:\Users\<сен>\Documents\srs_diagram_log.txt (же app docs).
+  // _extractFigure эң акыркы жолу эмне үчүн четке каккандыгы.
+  static String _lastReject = '';
+
+  static Future<void> _dbg(String msg) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final f = File('${dir.path}${Platform.pathSeparator}srs_diagram_log.txt');
+      final time = DateTime.now().toIso8601String();
+      await f.writeAsString('[$time] $msg\n\n',
+          mode: FileMode.append, flush: true);
+    } catch (_) {}
+  }
+  // =========================================================
 
   bool _isChatModel(String id) {
     final lower = id.toLowerCase();
@@ -669,12 +688,19 @@ ${_diagramFormats(config)}
         final r = await _request(prompt,
             maxTokens: 900 + attempt * 500,
             temperature: attempt == 0 ? 0.4 : 0.2);
+        await _dbg('=== "$sectionTitle" (аракет $attempt) ===\n'
+            'AI ЧИЙКИ ЖООБУ:\n${r.text}');
         final block = _extractFigure(r.text, config);
-        if (block != null) return block;
-      } catch (_) {
-        // кийинки аракет
+        if (block != null) {
+          await _dbg('НАТЫЙЖА: сүрөт кабыл алынды ->\n$block');
+          return block;
+        }
+        await _dbg('НАТЫЙЖА: сүрөт ЧЕТКЕ КАГЫЛДЫ. Себеп: $_lastReject');
+      } catch (e) {
+        await _dbg('"$sectionTitle" КАТА: $e');
       }
     }
+    await _dbg('"$sectionTitle": эки аракет тең ийгиликсиз, сүрөтсүз калды.');
     return null;
   }
 
@@ -766,7 +792,10 @@ ${_diagramFormats(config)}
       final b = reply.lastIndexOf('}');
       if (a >= 0 && b > a) json = reply.substring(a, b + 1);
     }
-    if (json == null) return null;
+    if (json == null) {
+      _lastReject = 'JSON табылган жок (код блогу да, {..} да жок)';
+      return null;
+    }
     json = json.trim();
 
     var kind = DiagramSpec.kindOf(fence ?? '');
@@ -774,10 +803,14 @@ ${_diagramFormats(config)}
     try {
       final d = jsonDecode(json);
       if (d is Map) map = d;
-    } catch (_) {
+    } catch (e) {
+      _lastReject = 'JSON бузук (jsonDecode ката берди): $e';
       return null;
     }
-    if (map == null) return null;
+    if (map == null) {
+      _lastReject = 'JSON Map эмес';
+      return null;
+    }
     kind ??= map['series'] is List
         ? DiagramKind.chart
         : map['elements'] is List
@@ -785,25 +818,48 @@ ${_diagramFormats(config)}
             : (map['nodes'] is List || map['steps'] is List)
                 ? DiagramKind.block
                 : null;
-    if (kind == null) return null;
+    if (kind == null) {
+      _lastReject = 'Түрүн аныктоо мүмкүн эмес: fence="$fence", '
+          'series/elements/nodes талаалары жок';
+      return null;
+    }
     if (kind == DiagramKind.circuit && !config.subject.needsCircuits) {
+      _lastReject = 'circuit кайтарылды, бирок бул предмет схема сурабайт';
       return null;
     }
 
     final spec = DiagramSpec.tryParse(kind, json);
-    if (spec == null) return null;
+    if (spec == null) {
+      _lastReject = 'tryParse null кайтарды (kind=$kind)';
+      return null;
+    }
     switch (kind) {
       case DiagramKind.chart:
         final s = spec.series;
-        if (s.isEmpty || s.any((e) => e.points.length < 2)) return null;
+        if (s.isEmpty) {
+          _lastReject = 'chart: series бош (points туура сан эмес болушу '
+              'мүмкүн). JSON: ${json.length > 300 ? json.substring(0, 300) : json}';
+          return null;
+        }
+        if (s.any((e) => e.points.length < 2)) {
+          _lastReject = 'chart: кээ бир сызыкта 2ден аз чекит бар';
+          return null;
+        }
         break;
       case DiagramKind.block:
-        if (spec.nodes.length < 3) return null;
+        if (spec.nodes.length < 3) {
+          _lastReject = 'block: node саны 3төн аз';
+          return null;
+        }
         break;
       case DiagramKind.circuit:
-        if (spec.elements.isEmpty) return null;
+        if (spec.elements.isEmpty) {
+          _lastReject = 'circuit: элементтер бош';
+          return null;
+        }
         break;
       case DiagramKind.image:
+        _lastReject = 'image түрү колдоого алынбайт';
         return null;
     }
     final name = kind == DiagramKind.chart

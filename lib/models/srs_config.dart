@@ -458,6 +458,21 @@ class SrsConfig {
     this.handProfile,
   });
 
+  /// Башка параметрлерди сактап, кол жазманы гана алмаштырат.
+  SrsConfig withHand(HandwritingStyle? style, String? profile) => SrsConfig(
+        subject: subject,
+        language: language,
+        pageCount: pageCount,
+        topic: topic,
+        documentText: documentText,
+        withDiagrams: withDiagrams,
+        withTitlePage: withTitlePage,
+        customSubject: customSubject,
+        asIs: asIs,
+        handwriting: style,
+        handProfile: profile,
+      );
+
   String get subjectName {
     final c = customSubject?.trim() ?? '';
     if (subject == Subject.custom && c.isNotEmpty) return c;

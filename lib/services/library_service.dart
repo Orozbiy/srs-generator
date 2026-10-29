@@ -137,9 +137,11 @@ class LibraryService {
     required SrsRecord record,
     required AuthorInfo author,
     required String content,
+    SrsConfig? config, // берилсе — жаңы жөндөөлөр (мис. башка кол жазма) менен
     void Function(String status)? onProgress,
   }) async {
-    final out = await _render(record.config, author, content, onProgress);
+    final cfg = config ?? record.config;
+    final out = await _render(cfg, author, content, onProgress);
 
     try {
       await File(record.pdfPath).writeAsBytes(out.pdf);
@@ -152,7 +154,7 @@ class LibraryService {
 
     final updated = SrsRecord(
       id: record.id,
-      config: record.config,
+      config: cfg,
       createdAt: record.createdAt,
       folder: record.folder,
       pdfPath: record.pdfPath,

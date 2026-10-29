@@ -1,0 +1,130 @@
+/// LaTeX'ти PDF/Word үчүн окулуучу жөнөкөй текстке айлантат.
+class LatexText {
+  static const Map<String, String> _symbols = <String, String>{
+    r'\cdot': '·', r'\times': '×', r'\div': '÷', r'\pm': '±', r'\mp': '∓',
+    r'\approx': '≈', r'\neq': '≠', r'\ne': '≠', r'\leq': '≤', r'\le': '≤',
+    r'\geq': '≥', r'\ge': '≥', r'\ll': '≪', r'\gg': '≫', r'\propto': '∝',
+    r'\infty': '∞', r'\partial': '∂', r'\nabla': '∇', r'\int': '∫',
+    r'\oint': '∮', r'\sum': 'Σ', r'\prod': 'Π', r'\rightarrow': '→',
+    r'\to': '→', r'\Rightarrow': '⇒', r'\leftarrow': '←', r'\cdots': '…',
+    r'\dots': '…', r'\ldots': '…', r'\in': '∈', r'\forall': '∀',
+    r'\exists': '∃', r'\subset': '⊂', r'\cup': '∪', r'\cap': '∩',
+    r'\Omega': 'Ω', r'\omega': 'ω', r'\alpha': 'α', r'\beta': 'β',
+    r'\gamma': 'γ', r'\Gamma': 'Γ', r'\delta': 'δ', r'\Delta': 'Δ',
+    r'\epsilon': 'ε', r'\varepsilon': 'ε', r'\zeta': 'ζ', r'\eta': 'η',
+    r'\theta': 'θ', r'\Theta': 'Θ', r'\kappa': 'κ', r'\lambda': 'λ',
+    r'\Lambda': 'Λ', r'\mu': 'µ', r'\nu': 'ν', r'\xi': 'ξ', r'\pi': 'π',
+    r'\Pi': 'Π', r'\rho': 'ρ', r'\sigma': 'σ', r'\Sigma': 'Σ', r'\tau': 'τ',
+    r'\phi': 'φ', r'\Phi': 'Φ', r'\varphi': 'φ', r'\chi': 'χ', r'\psi': 'ψ',
+    r'\Psi': 'Ψ', r'\degree': '°', r'\circ': '°',
+  };
+
+  static const Map<String, String> _sup = <String, String>{
+    '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶',
+    '7': '⁷', '8': '⁸', '9': '⁹', '+': '⁺', '-': '⁻', '−': '⁻', 'n': 'ⁿ',
+    'i': 'ⁱ', '(': '⁽', ')': '⁾',
+  };
+
+  static const Map<String, String> _sub = <String, String>{
+    '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆',
+    '7': '₇', '8': '₈', '9': '₉', '+': '₊', '-': '₋', '−': '₋', '(': '₍',
+    ')': '₎',
+  };
+
+  static String _mapAll(String src, Map<String, String> table, String prefix) {
+    final out = StringBuffer();
+    for (final ch in src.split('')) {
+      final m = table[ch];
+      // Индекс түшүрүлбөсө — _ белгисин көрсөтпөй, жөн гана тамгаларын жазабыз.
+      if (m == null) return prefix == '_' ? src : '$prefix$src';
+      out.write(m);
+    }
+    return out.toString();
+  }
+
+  static String _wrap(String s) =>
+      RegExp(r'[+\-*/ ]').hasMatch(s.trim()) ? '(${s.trim()})' : s.trim();
+
+  /// ^{2} → ², _{1} → ₁
+  static String powers(String input) {
+    var s = input;
+    for (var i = 0; i < 3; i++) {
+      final before = s;
+      s = s.replaceAllMapped(
+          RegExp(r'\^\{([^{}]*)\}'), (m) => _mapAll(m[1]!, _sup, '^'));
+      s = s.replaceAllMapped(
+          RegExp(r'\^([A-Za-z0-9+\-−])'), (m) => _mapAll(m[1]!, _sup, '^'));
+      s = s.replaceAllMapped(
+          RegExp(r'_\{([^{}]*)\}'), (m) => _mapAll(m[1]!, _sub, '_'));
+      s = s.replaceAllMapped(
+          RegExp(r'_([A-Za-z0-9+\-−])'), (m) => _mapAll(m[1]!, _sub, '_'));
+      if (s == before) break;
+    }
+    return s;
+  }
+
+  static String toPlain(String input) {
+    var s = input;
+
+    for (var i = 0; i < 4; i++) {
+      s = s.replaceAllMapped(
+          RegExp(r'\\(?:text|mathrm|mathbf|mathit|operatorname)\{([^{}]*)\}'),
+          (m) => m[1]!);
+    }
+
+    s = powers(s);
+
+    for (var i = 0; i < 5; i++) {
+      final before = s;
+      s = s.replaceAllMapped(RegExp(r'\\[dt]?frac\{([^{}]*)\}\{([^{}]*)\}'),
+          (m) => '${_wrap(m[1]!)}/${_wrap(m[2]!)}');
+      s = s.replaceAllMapped(
+          RegExp(r'\\sqrt\{([^{}]*)\}'), (m) => '√(${m[1]})');
+      if (s == before) break;
+    }
+
+    s = s.replaceAll(RegExp(r'\\(?:left|right|quad|qquad|displaystyle)\b'), ' ');
+    s = s.replaceAll(RegExp(r'\\[,;:!]'), ' ');
+
+    // Белгилерди (\approx, \Omega ж.б.) ТАК ушул жерде, катардагы "\" белгиси
+    // алынып салынганга чейин алмаштырабыз — болбосо ылдыйкы жалпы
+    // тазалоо "\" нин баарын мурда жок кылып, симболдор эч качан табылбай калат.
+    s = s.replaceAllMapped(
+        RegExp(r'\\([a-zA-Z]+)'), (m) => _symbols['\\${m[1]}'] ?? m[1]!);
+
+    s = s.replaceAll(RegExp(r'\\(?=\s|\$)'), ' ');
+    s = s.replaceAll(r'\\', ' ');
+    s = s.replaceAll(r'\%', '%').replaceAll(r'\$', r'$');
+
+    s = powers(s);
+
+    s = s.replaceAll('{', '').replaceAll('}', '');
+    s = s.replaceAll(RegExp(r'[ \t]+'), ' ').trim();
+    return s;
+  }
+
+  /// Кол жазма режиминде формулалар өзгөрүүсүз калышы үчүн белгилер.
+  static const String markOpen = '\uE000';
+  static const String markClose = '\uE001';
+
+  /// Сап ичиндеги markdown жана формулаларды тазалайт.
+  /// [mark] true болсо, формулалар markOpen..markClose менен курчалат.
+  static String inline(String text, {bool mark = false}) {
+    String f(String x) => mark ? '$markOpen${toPlain(x)}$markClose' : toPlain(x);
+    var s = text
+        .replaceAll('**', '')
+        .replaceAll('__', '')
+        .replaceAll('`', '');
+    s = s.replaceAllMapped(RegExp(r'<sub>(.*?)</sub>'), (m) => _mapAll(m[1]!, _sub, ''));
+    s = s.replaceAllMapped(RegExp(r'<sup>(.*?)</sup>'), (m) => _mapAll(m[1]!, _sup, ''));
+    s = s.replaceAllMapped(RegExp(r'\\\((.+?)\\\)'), (m) => f(m[1]!));
+    s = s.replaceAllMapped(RegExp(r'\\\[(.+?)\\\]'), (m) => f(m[1]!));
+    s = s.replaceAllMapped(RegExp(r'\$([^$]+)\$'), (m) => f(m[1]!));
+    s = s.replaceAll(r'$', '');
+        // Модель $ белгисиз жазып койгон LaTeX калдыктарын да тазалайбыз
+    if (s.contains('\\') || s.contains('_{') || s.contains('^{')) {
+      s = toPlain(s);
+    }
+    return s.trim();
+  }
+}
